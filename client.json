@@ -1,0 +1,18 @@
+{
+    "type":"client", 
+    "protocol":{
+        "proto":"quic",
+        "ip":"104.224.178.14",
+        "quicUrl":"",
+        "allowInSecure":true,
+        "port":4567
+    },
+    "tunnelName":"tunnel1",
+    "passwd":"12345@",
+    "deviceType":"tap",
+    "deviceName":"tun1",
+    "keepalive":5,
+    "mutilQueue":2,
+    "network":"10.0.0.2/24",
+    "timeout":60
+}

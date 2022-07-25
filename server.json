@@ -1,0 +1,36 @@
+{
+    "type":"server",
+    "tcp":{
+        "enable":true,
+        "port":6123,
+        "ip":"0.0.0.0"
+    },
+    "icmp":{
+        "enable":true,
+        "ip":"104.244.178.14",
+        "timeout":60
+    },
+    "quic":{
+        "enable":true,
+        "port":4567,
+        "ip":"0.0.0.0",
+        "certPath":"/root/.acme.sh/cloudspace.cyou/fullchain.cer",
+        "keyPath":"/root/.acme.sh/cloudspace.cyou/cloudspace.cyou.key",
+        "timeout":30
+    },
+    "tunnels":[
+        {
+            "tunnelName":"tunnel1",
+            "passwd":"12345@",
+            "deviceType":"tap",
+            "deviceName":"tun1",
+            "network":"10.0.0.1/24"
+        },{
+            "tunnelName":"tunnel2",
+            "passwd":"12345@",
+            "deviceType":"tap",
+            "deviceName":"tun2",
+            "network":"10.0.1.1/24"
+        }
+    ]
+}
