@@ -44,25 +44,43 @@ type IcmpTunCtrl struct {
 
 var MutexQUIC sync.Mutex //this is used in AuthQUIC
 
-type Protocol struct {
-	Proto         string `json:"proto"`
+type Tcp struct {
+	Ip        string `json:"ip"`
+	Port      int    `json:"port"`
+	KeepaLvie int    `json:"keepalive"`
+}
+
+type Icmp struct {
+	Ip         string `json:"ip"`
+	Identifier int    `json:"identifier"`
+	Timeout    int    `json:"timeout"`
+	KeepaLvie  int    `json:"keepalive"`
+	RetryTimes int    `json:"retryTimes"`
+	BreakTime  int    `json:"breakTime"`
+}
+
+type QUIC struct {
 	Ip            string `json:"ip"`
-	QuicUrl       string `josn:"quicUrl"`       //for quic
-	AllowInSecure bool   `json:"allowInSecure"` //for quic, true allow insecure cert
-	Port          int    `json:"port"`          //port for tcp; while for icmp,this is used as identifier and seqnum
+	QuicUrl       string `json:"quicUrl"`
+	Port          int    `json:"port"`
+	AllowInSecure bool   `json:"allowInSecure"`
+	ShakeTime     int    `json:"shakeTime"`
+	Idletime      int    `json:"idleTime"`
+	Timeout       int    `json:"timeout"`
 }
 
 type ClientCfg struct {
-	Type       string   `json:"type"`
-	Protocol   Protocol `json:"protocol"`
-	TunnelName string   `json:"tunnelName"`
-	Passwd     string   `json:"passwd"`
-	DeviceType string   `json:"deviceType"`
-	DeviceName string   `json:"deviceName"`
-	KeepaLvie  int      `json:"keepalive"`
-	MutilQueue int      `json:"mutilQueue"`
-	Network    string   `json:"network"`
-	Timeout    int      `json:"timeout"`
+	Type       string `json:"type"`
+	Protocol   string `json:"protocol"`
+	TCP        Tcp    `json:"tcp"`
+	ICMP       Icmp   `json:"icmp"`
+	QUIC       QUIC   `json:"quic"`
+	TunnelName string `json:"tunnelName"`
+	Passwd     string `json:"passwd"`
+	DeviceType string `json:"deviceType"`
+	DeviceName string `json:"deviceName"`
+	MutilQueue int    `json:"mutilQueue"`
+	Network    string `json:"network"`
 }
 
 func LoadClientCfg(path string) (*ClientCfg, error) {

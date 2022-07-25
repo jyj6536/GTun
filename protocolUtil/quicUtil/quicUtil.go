@@ -143,7 +143,7 @@ Stop:
 	}).Errorln("ReadQUICToTun Error.")
 }
 
-func ReadQUICToTunClient(stream quic.Stream, iface *water.Interface) {
+func ReadQUICToTunClient(stream quic.Stream, iface *water.Interface,timeout int) {
 	defer func() {
 		stream.Close()
 		iface.Close()
@@ -158,7 +158,7 @@ func ReadQUICToTunClient(stream quic.Stream, iface *water.Interface) {
 	var err error
 	var n int
 	for {
-		err = stream.SetReadDeadline(time.Now().Add(time.Second * 5))
+		err = stream.SetReadDeadline(time.Now().Add(time.Second * time.Duration(timeout)))
 		if err != nil {
 			goto Stop
 		}
@@ -180,7 +180,7 @@ Stop:
 	}).Errorln("ReadQUICToTunClient Error.")
 }
 
-func ReadTunToQUICClient(stream quic.Stream, iface *water.Interface) {
+func ReadTunToQUICClient(stream quic.Stream, iface *water.Interface,timeout int) {
 	defer func() {
 		stream.Close()
 		iface.Close()
@@ -195,7 +195,7 @@ func ReadTunToQUICClient(stream quic.Stream, iface *water.Interface) {
 			goto Stop
 		}
 
-		err = stream.SetWriteDeadline(time.Now().Add(time.Second * 5))
+		err = stream.SetWriteDeadline(time.Now().Add(time.Second * time.Duration(timeout)))
 		if err != nil {
 			goto Stop
 		}

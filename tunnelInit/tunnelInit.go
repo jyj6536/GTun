@@ -23,7 +23,7 @@ import (
 func ClientInit(clientCfg *cfgUtil.ClientCfg) error {
 	logrus.Debugln("Start Initializing Client.")
 
-	if clientCfg.Protocol.Proto == "icmp" {
+	if clientCfg.Protocol == "icmp" {
 		clientCfg.MutilQueue = 1
 	}
 
@@ -32,22 +32,20 @@ func ClientInit(clientCfg *cfgUtil.ClientCfg) error {
 		return err
 	}
 
-	if clientCfg.Protocol.Proto == "tcp" {
+	if clientCfg.Protocol == "tcp" {
 		connSet, err := authutil.AuthClient(clientCfg)
 		if err != nil {
 			return err
 		}
-		if clientCfg.KeepaLvie > 0 { //use tcp keepalive to keep tcp nat session
-			if clientCfg.KeepaLvie < 5 {
-				clientCfg.KeepaLvie = 5
-			} else if clientCfg.KeepaLvie > 60 {
-				clientCfg.KeepaLvie = 60
+		if clientCfg.TCP.KeepaLvie > 0 { //use tcp keepalive to keep tcp nat session
+			if clientCfg.TCP.KeepaLvie < 5 {
+				clientCfg.TCP.KeepaLvie = 5
 			}
 			logrus.WithFields(logrus.Fields{
-				"Keepalive": clientCfg.KeepaLvie,
+				"Keepalive": clientCfg.TCP.KeepaLvie,
 			}).Debugln("Set keepalive for tcp conn.")
 			for _, conn := range connSet {
-				err = protocolutil.SetTcpKeepalive(clientCfg.KeepaLvie, conn)
+				err = protocolutil.SetTcpKeepalive(clientCfg.TCP.KeepaLvie, conn)
 				if err != nil {
 					logrus.WithFields(logrus.Fields{
 						"Error": err,
@@ -62,7 +60,7 @@ func ClientInit(clientCfg *cfgUtil.ClientCfg) error {
 			go protocolutil.ReadTunToTcpClient(connSet[i], ifaceSet[i])
 			go protocolutil.ReadTcpToTunClient(connSet[i], ifaceSet[i])
 		}
-	} else if clientCfg.Protocol.Proto == "icmp" {
+	} else if clientCfg.Protocol == "icmp" {
 		conn, icmp, err := authutil.AuthlClientIcmp(clientCfg)
 		if err != nil {
 			return err
@@ -71,7 +69,7 @@ func ClientInit(clientCfg *cfgUtil.ClientCfg) error {
 		cfgUtil.IcmpTunStsCtrl.Store("ClientIcmpTimeoutCtrl", &cfgUtil.IcmpTunCtrl{Time: time.Now()})
 
 		go func() { //this goroutine scan cfgUtil.IcmpIface periodicity to check whether server is available or not, if not, stop client iteself
-			ticker := time.NewTicker(time.Minute)
+			ticker := time.NewTicker(time.Second * time.Duration(clientCfg.ICMP.BreakTime))
 			for range ticker.C {
 				value, ok := cfgUtil.IcmpTunStsCtrl.Load("ClientIcmpTimeoutCtrl")
 				if ok {
@@ -84,14 +82,14 @@ func ClientInit(clientCfg *cfgUtil.ClientCfg) error {
 		}()
 
 		go protocolutil.ReadIcmpToTun(conn, ifaceSet[0])
-		go protocolutil.ReadTunToIcmp(conn, ifaceSet[0], icmp, time.Second*time.Duration(clientCfg.KeepaLvie))
-	} else if clientCfg.Protocol.Proto == "quic" {
+		go protocolutil.ReadTunToIcmp(conn, ifaceSet[0], icmp, clientCfg.ICMP.KeepaLvie)
+	} else if clientCfg.Protocol == "quic" {
 		streamSet, err := authutil.AuthQUICClient(clientCfg)
 		if err != nil {
 			return err
 		}
 
-		err = streamSet[0].SetReadDeadline(time.Now().Add(time.Second * 5))
+		err = streamSet[0].SetReadDeadline(time.Now().Add(time.Second * time.Duration(clientCfg.QUIC.Timeout)))
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
 				"Error": err,
@@ -110,8 +108,8 @@ func ClientInit(clientCfg *cfgUtil.ClientCfg) error {
 		cfgUtil.TunStsClient.ActiveConn = int32(len(streamSet))
 
 		for i := 0; i < len(streamSet); i++ {
-			go quicutil.ReadTunToQUICClient(streamSet[i], ifaceSet[i])
-			go quicutil.ReadQUICToTunClient(streamSet[i], ifaceSet[i])
+			go quicutil.ReadTunToQUICClient(streamSet[i], ifaceSet[i], clientCfg.QUIC.Timeout)
+			go quicutil.ReadQUICToTunClient(streamSet[i], ifaceSet[i], clientCfg.QUIC.Timeout)
 		}
 	}
 

@@ -149,7 +149,7 @@ func ReadIcmpToTun(conn *net.IPConn, iface *water.Interface) {
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
 				"Error": err,
-			}).Errorln("Set ReadDeadline Failed.")
+			}).Errorln("Read Icmp Error.")
 			continue
 		}
 		ipHeadLen := int(uint8(buf[0]) & 0x0f * 4)
@@ -187,13 +187,13 @@ func ReadIcmpToTun(conn *net.IPConn, iface *water.Interface) {
 	}
 }
 
-func ReadTunToIcmp(conn *net.IPConn, iface *water.Interface, icmp *icmputil.ICMP, keepalive time.Duration) {
+func ReadTunToIcmp(conn *net.IPConn, iface *water.Interface, icmp *icmputil.ICMP, keepalive int) {
 	buf := make([]byte, 65536)
 
 	mutex := sync.Mutex{}
 
 	go func() { //this go routine send 0x04 to server periodicity to keep alive
-		ticker := time.NewTicker(keepalive)
+		ticker := time.NewTicker(time.Second*time.Duration(keepalive))
 		for range ticker.C {
 			mutex.Lock()
 			data := icmp.Create(icmputil.Request, 0, icmp.Identifier, icmp.SeqNum, []byte{0x04})

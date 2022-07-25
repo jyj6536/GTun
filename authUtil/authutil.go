@@ -420,7 +420,7 @@ func QUICTUnnelStart(tuSts *cfgUtil.TunnelSts) error {
 }
 
 func AuthClient(clientCfg *cfgUtil.ClientCfg) ([]*net.TCPConn, error) {
-	addr := &net.TCPAddr{Port: clientCfg.Protocol.Port, IP: net.ParseIP(clientCfg.Protocol.Ip)}
+	addr := &net.TCPAddr{Port: clientCfg.TCP.Port, IP: net.ParseIP(clientCfg.TCP.Ip)}
 
 	ag := &cipherUtil.AesGcm{}
 	err := ag.Init(clientCfg.Passwd)
@@ -553,7 +553,7 @@ func AuthClient(clientCfg *cfgUtil.ClientCfg) ([]*net.TCPConn, error) {
 	}
 
 	var connSet []*net.TCPConn
-	if clientCfg.Protocol.Proto == "tcp" {
+	if clientCfg.Protocol == "tcp" {
 		connSet = AuthTcp(rand64, clientCfg, addr, ag)
 		connSet = append(connSet, conn)
 	}
@@ -796,7 +796,7 @@ func AuthlClientIcmp(clientCfg *cfgUtil.ClientCfg) (*net.IPConn, *icmputil.ICMP,
 		return nil, nil, err
 	}
 
-	addr, err := net.ResolveIPAddr("ip", clientCfg.Protocol.Ip)
+	addr, err := net.ResolveIPAddr("ip", clientCfg.ICMP.Ip)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"Error": err,
@@ -813,11 +813,11 @@ func AuthlClientIcmp(clientCfg *cfgUtil.ClientCfg) (*net.IPConn, *icmputil.ICMP,
 	tunNameBuf := []byte(clientCfg.TunnelName)
 	//step1
 	data := append([]byte{0x01}, tunNameBuf...)
-	identifier := uint16(clientCfg.Protocol.Port)
+	identifier := uint16(clientCfg.ICMP.Identifier)
 	icmp := &icmputil.ICMP{}
 	data = icmp.Create(icmputil.Request, 0, identifier, identifier, data)
 
-	retryTimes := 5
+	retryTimes := clientCfg.ICMP.RetryTimes
 	i := 0
 
 	for i = 0; i < retryTimes; i++ {
@@ -826,7 +826,7 @@ func AuthlClientIcmp(clientCfg *cfgUtil.ClientCfg) (*net.IPConn, *icmputil.ICMP,
 			continue
 		}
 		t := time.Now()
-		err = conn.SetReadDeadline(t.Add(time.Second * 5)) //timeout after 5 seconds
+		err = conn.SetReadDeadline(t.Add(time.Second * time.Duration(clientCfg.ICMP.Timeout))) //timeout after clientCfg.ICMP.Timeout seconds
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
 				"Step":  "Step1",
@@ -1140,17 +1140,17 @@ func AuthQUIC(stream quic.Stream, serverCfg *cfgUtil.ServerCfg) {
 
 func AuthQUICClient(clientCfg *cfgUtil.ClientCfg) ([]quic.Stream, error) {
 	tunNameBuf := []byte(clientCfg.TunnelName)
-	tlsConfig := &tls.Config{InsecureSkipVerify: clientCfg.Protocol.AllowInSecure, NextProtos: []string{"quic-tunproject"}}
+	tlsConfig := &tls.Config{InsecureSkipVerify: clientCfg.QUIC.AllowInSecure, NextProtos: []string{"quic-tunproject"}}
 	addrStr := ""
 	streamSet := make([]quic.Stream, 0)
 	ag := &cipherUtil.AesGcm{}
 	buf := make([]byte, 65536)
-	qConfig := &quic.Config{KeepAlive: true, HandshakeIdleTimeout: time.Second * time.Duration(clientCfg.Timeout), MaxIdleTimeout: time.Second * time.Duration(clientCfg.Timeout)}
+	qConfig := &quic.Config{KeepAlive: true, HandshakeIdleTimeout: time.Second * time.Duration(clientCfg.QUIC.ShakeTime), MaxIdleTimeout: time.Second * time.Duration(clientCfg.QUIC.Idletime)}
 
-	if clientCfg.Protocol.QuicUrl != "" {
-		addrStr = clientCfg.Protocol.QuicUrl + ":" + strconv.Itoa(clientCfg.Protocol.Port)
+	if clientCfg.QUIC.QuicUrl != "" {
+		addrStr = clientCfg.QUIC.QuicUrl + ":" + strconv.Itoa(clientCfg.QUIC.Port)
 	} else {
-		addr := net.UDPAddr{IP: net.ParseIP(clientCfg.Protocol.Ip), Port: clientCfg.Protocol.Port}
+		addr := net.UDPAddr{IP: net.ParseIP(clientCfg.QUIC.Ip), Port: clientCfg.QUIC.Port}
 		addrStr = addr.String()
 	}
 
@@ -1178,6 +1178,15 @@ func AuthQUICClient(clientCfg *cfgUtil.ClientCfg) ([]quic.Stream, error) {
 			}).Errorln("QUIC Accept Stream failed.")
 			return nil, err
 		}
+
+		err = stream.SetWriteDeadline(time.Now().Add(time.Second * time.Duration(clientCfg.QUIC.Timeout)))
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"Error": err,
+			}).Errorln("Auth failed.")
+			return nil, err
+		}
+
 		err = quicutil.WriteQUIC(stream, tunNameBuf, len(tunNameBuf))
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
@@ -1193,14 +1202,31 @@ func AuthQUICClient(clientCfg *cfgUtil.ClientCfg) ([]quic.Stream, error) {
 			}).Errorln("Auth failed.")
 			return nil, err
 		}
+
+		err = stream.SetWriteDeadline(time.Now().Add(time.Second * time.Duration(clientCfg.QUIC.Timeout)))
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"Error": err,
+			}).Errorln("Auth failed.")
+			return nil, err
+		}
+
 		err = quicutil.WriteQUIC(stream, stampEnc, len(stampEnc))
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
 				"Error": err,
 			}).Errorln("Auth failed.")
-			stream.Close()
 			return nil, err
 		}
+
+		err = stream.SetReadDeadline(time.Now().Add(time.Second * time.Duration(clientCfg.QUIC.Timeout)))
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"Error": err,
+			}).Errorln("Auth failed.")
+			return nil, err
+		}
+
 		n, err := quicutil.ReadQUIC(stream, buf)
 		if err != nil || string(buf[:n]) != "ok" {
 			if err == nil {
@@ -1209,7 +1235,6 @@ func AuthQUICClient(clientCfg *cfgUtil.ClientCfg) ([]quic.Stream, error) {
 			logrus.WithFields(logrus.Fields{
 				"Error": err,
 			}).Errorln("Auth failed.")
-			stream.Close()
 			return nil, err
 		}
 		streamSet = append(streamSet, stream)
