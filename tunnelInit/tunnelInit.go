@@ -210,7 +210,7 @@ func serverIcmpListen(scfg *cfgUtil.ServerCfg) error {
 	go icmputil.WriteToConnServer() //this goroutine receive data from C and send to ConnServer
 
 	go func() { //this goroutine scan cfgUtil.IcmpTunStsCtrl periodicity to remove icmp tunnel which is timed out
-		ticker := time.NewTicker(time.Second * time.Duration(scfg.ICMP.Timeout))
+		ticker := time.NewTicker(time.Second * time.Duration(scfg.ICMP.BreakTime))
 		for range ticker.C { //scan periodicity per minute
 			cfgUtil.IcmpTunStsCtrl.Range(func(key, value interface{}) bool {
 				v := value.(*cfgUtil.IcmpTunCtrl)
@@ -293,7 +293,7 @@ func serverIcmpListen(scfg *cfgUtil.ServerCfg) error {
 
 func serverQUICListen(scfg *cfgUtil.ServerCfg) error {
 	tlsConfig, err := quicutil.GenerateTlsConfig(scfg.QUIC.CertPath, scfg.QUIC.KeyPath)
-	qConfig := &quic.Config{HandshakeIdleTimeout: time.Second * time.Duration(scfg.QUIC.Timeout), MaxIdleTimeout: time.Second * time.Duration(scfg.QUIC.Timeout), KeepAlive: true}
+	qConfig := &quic.Config{HandshakeIdleTimeout: time.Second * time.Duration(scfg.QUIC.ShakeTime), MaxIdleTimeout: time.Second * time.Duration(scfg.QUIC.IdleTime), KeepAlive: true}
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"Error": err,

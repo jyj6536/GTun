@@ -8,7 +8,7 @@
     "icmp":{
         "enable":true,
         "ip":"104.244.178.14",
-        "timeout":60
+        "breakTime":60
     },
     "quic":{
         "enable":true,
@@ -16,7 +16,10 @@
         "ip":"0.0.0.0",
         "certPath":"/root/.acme.sh/cloudspace.cyou/fullchain.cer",
         "keyPath":"/root/.acme.sh/cloudspace.cyou/cloudspace.cyou.key",
-        "timeout":30
+        "shakeTime":5,
+        "idleTime":30,
+        "waitTime":50,
+        "timeout":5
     },
     "tunnels":[
         {

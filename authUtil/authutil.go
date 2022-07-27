@@ -399,7 +399,7 @@ func IcmpTunnelStart(tuSts *cfgUtil.TunnelSts, icmp *icmputil.ICMP, addr net.Add
 	return err
 }
 
-func QUICTUnnelStart(tuSts *cfgUtil.TunnelSts) error {
+func QUICTUnnelStart(tuSts *cfgUtil.TunnelSts, timeout int) error {
 	ccfg := &cfgUtil.ClientCfg{}
 	ccfg.DeviceType = tuSts.TunInfo.DeviceType
 	ccfg.DeviceName = tuSts.TunInfo.DeviceName
@@ -413,8 +413,8 @@ func QUICTUnnelStart(tuSts *cfgUtil.TunnelSts) error {
 
 	streamSet := tuSts.QUICStream
 	for i := 0; i < len(streamSet); i++ {
-		go quicutil.ReadTunToQUIC(streamSet[i], ifaceSet[i], tuSts.TunInfo.TunnelName)
-		go quicutil.ReadQUICToTun(streamSet[i], ifaceSet[i], tuSts.TunInfo.TunnelName)
+		go quicutil.ReadTunToQUIC(streamSet[i], ifaceSet[i], tuSts.TunInfo.TunnelName, timeout)
+		go quicutil.ReadQUICToTun(streamSet[i], ifaceSet[i], tuSts.TunInfo.TunnelName, timeout)
 	}
 	return err
 }
@@ -1082,7 +1082,7 @@ func AuthQUIC(stream quic.Stream, serverCfg *cfgUtil.ServerCfg) {
 
 		go func(stream quic.Stream, tuSts *cfgUtil.TunnelSts, tuName string) {
 			buf := make([]byte, 65536)
-			err := stream.SetReadDeadline(time.Now().Add(time.Second * 50))
+			err := stream.SetReadDeadline(time.Now().Add(time.Second * time.Duration(serverCfg.QUIC.WaitTime)))
 			if err != nil {
 				cfgUtil.TunStsMap.Delete(tuName)
 				logrus.WithFields(logrus.Fields{
@@ -1105,7 +1105,7 @@ func AuthQUIC(stream quic.Stream, serverCfg *cfgUtil.ServerCfg) {
 			logrus.WithFields(logrus.Fields{
 				"TuName": tuName,
 			}).Debugln("Connect Complete.")
-			err = QUICTUnnelStart(tuSts)
+			err = QUICTUnnelStart(tuSts, serverCfg.QUIC.Timeout)
 			if err != nil {
 				cfgUtil.TunStsMap.Delete(tuName)
 			}
@@ -1145,7 +1145,7 @@ func AuthQUICClient(clientCfg *cfgUtil.ClientCfg) ([]quic.Stream, error) {
 	streamSet := make([]quic.Stream, 0)
 	ag := &cipherUtil.AesGcm{}
 	buf := make([]byte, 65536)
-	qConfig := &quic.Config{KeepAlive: true, HandshakeIdleTimeout: time.Second * time.Duration(clientCfg.QUIC.ShakeTime), MaxIdleTimeout: time.Second * time.Duration(clientCfg.QUIC.Idletime)}
+	qConfig := &quic.Config{KeepAlive: true, HandshakeIdleTimeout: time.Second * time.Duration(clientCfg.QUIC.ShakeTime), MaxIdleTimeout: time.Second * time.Duration(clientCfg.QUIC.IdleTime)}
 
 	if clientCfg.QUIC.QuicUrl != "" {
 		addrStr = clientCfg.QUIC.QuicUrl + ":" + strconv.Itoa(clientCfg.QUIC.Port)

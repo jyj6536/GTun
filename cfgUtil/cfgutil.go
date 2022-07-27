@@ -65,7 +65,7 @@ type QUIC struct {
 	Port          int    `json:"port"`
 	AllowInSecure bool   `json:"allowInSecure"`
 	ShakeTime     int    `json:"shakeTime"`
-	Idletime      int    `json:"idleTime"`
+	IdleTime      int    `json:"idleTime"`
 	Timeout       int    `json:"timeout"`
 }
 
@@ -130,18 +130,21 @@ type TCPCfg struct {
 }
 
 type ICMPCfg struct {
-	Enable  bool   `json:"enable"`
-	IP      string `json:"ip"`
-	Timeout int    `json:"timeout"`
+	Enable    bool   `json:"enable"`
+	IP        string `json:"ip"`
+	BreakTime int    `json:"breakTime"`
 }
 
 type QUICCfg struct {
-	Enable   bool   `json:"enable"`
-	Port     int    `json:"port"`
-	IP       string `json:"ip"`
-	CertPath string `json:"certPath"` //public key
-	KeyPath  string `json:"keyPath"`  //private key
-	Timeout  int    `json:"timeout"`
+	Enable    bool   `json:"enable"`
+	Port      int    `json:"port"`
+	IP        string `json:"ip"`
+	CertPath  string `json:"certPath"` //public key
+	KeyPath   string `json:"keyPath"`  //private key
+	ShakeTime int    `json:"shakeTime"`
+	IdleTime  int    `json:"idleTime"`
+	WaitTime  int    `json:"waitTime"`
+	Timeout   int    `json:"timeout"`
 }
 
 func LoadServerCfg(path string) (*ServerCfg, error) {
