@@ -281,9 +281,9 @@ func serverIcmpListen(scfg *cfgUtil.ServerCfg) error {
 				if ok {
 					icmpTunCtrl := value.(*cfgUtil.IcmpTunCtrl)
 					icmpTunCtrl.Time = time.Now()
+					retIcmp := icmp.Create(icmputil.Reply, icmp.Code, icmp.Identifier, icmp.SeqNum, []byte{0x04})
+					icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
 				}
-				retIcmp := icmp.Create(icmputil.Reply, icmp.Code, icmp.Identifier, icmp.SeqNum, []byte{0x04})
-				icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
 			default:
 			}
 		}
