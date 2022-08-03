@@ -47,16 +47,16 @@ var MutexQUIC sync.Mutex //this is used in AuthQUIC
 type Tcp struct {
 	Ip        string `json:"ip"`
 	Port      int    `json:"port"`
-	KeepaLvie int    `json:"keepalive"`
+	KeepaLvie int    `json:"keepalive"` //set keepalive_probes(count of keepalive probe packets) and keepalive_time(idle time before starting keepalive)
 }
 
 type Icmp struct {
 	Ip         string `json:"ip"`
 	Identifier int    `json:"identifier"`
-	Timeout    int    `json:"timeout"`
-	KeepaLvie  int    `json:"keepalive"`
-	RetryTimes int    `json:"retryTimes"`
-	BreakTime  int    `json:"breakTime"`
+	Timeout    int    `json:"timeout"`    //timeout used in connecting(default is 1s)
+	KeepaLvie  int    `json:"keepalive"`  //interval between two probe packets(default is 1s, should be less than breakTime)
+	RetryTimes int    `json:"retryTimes"` //when connecting to server, how many times client will retry if connecting times out(minimum is 1)
+	BreakTime  int    `json:"breakTime"`  //how long it will take before client abandons the tunnel when it don't receive any packet from the server(default is 2s)
 }
 
 type QUIC struct {
@@ -64,9 +64,9 @@ type QUIC struct {
 	QuicUrl       string `json:"quicUrl"`
 	Port          int    `json:"port"`
 	AllowInSecure bool   `json:"allowInSecure"`
-	ShakeTime     int    `json:"shakeTime"`
-	IdleTime      int    `json:"idleTime"`
-	Timeout       int    `json:"timeout"`
+	ShakeTime     int    `json:"shakeTime"` //ssl shakehand timeout(0 means default and default is 5s)
+	IdleTime      int    `json:"idleTime"`  //maximum duration that may pass without any incoming network activity(0 means default and default is  30s, the actual value for the idle timeout is the minimum of this value and the peer's)
+	Timeout       int    `json:"timeout"`   //timeout used in send or receive
 }
 
 type ClientCfg struct {
@@ -101,6 +101,19 @@ func LoadClientCfg(path string) (*ClientCfg, error) {
 		}).Errorln("Unmarshal Client Config File error.")
 		return nil, err
 	}
+
+	intRestrict(&clientCfg.ICMP.Timeout, 1, -1)
+	intRestrict(&clientCfg.ICMP.RetryTimes, 1, -1)
+	intRestrict(&clientCfg.ICMP.BreakTime, 2, -1)
+	intRestrict(&clientCfg.ICMP.KeepaLvie, 1, clientCfg.ICMP.BreakTime-1)
+
+	//avoid negative number
+	intRestrict(&clientCfg.QUIC.ShakeTime, 0, -1)
+	intRestrict(&clientCfg.QUIC.IdleTime, 0, -1)
+	intRestrict(&clientCfg.QUIC.Timeout, 0, -1)
+
+	intRestrict(&clientCfg.MutilQueue, 1, 8)
+
 	logrus.WithFields(logrus.Fields{
 		"CfgInfo": clientCfg,
 	}).Debugln("End Loading Client Config File.")
@@ -132,19 +145,19 @@ type TCPCfg struct {
 type ICMPCfg struct {
 	Enable    bool   `json:"enable"`
 	IP        string `json:"ip"`
-	BreakTime int    `json:"breakTime"`
+	BreakTime int    `json:"breakTime"` //how long it will take before server abandons the tunnel when it don't receive any packet from the client
 }
 
 type QUICCfg struct {
 	Enable    bool   `json:"enable"`
 	Port      int    `json:"port"`
 	IP        string `json:"ip"`
-	CertPath  string `json:"certPath"` //public key
-	KeyPath   string `json:"keyPath"`  //private key
-	ShakeTime int    `json:"shakeTime"`
-	IdleTime  int    `json:"idleTime"`
-	WaitTime  int    `json:"waitTime"`
-	Timeout   int    `json:"timeout"`
+	CertPath  string `json:"certPath"`  //public key
+	KeyPath   string `json:"keyPath"`   //private key
+	ShakeTime int    `json:"shakeTime"` //ssl shakehand timeout(0 means default and default is 5s)
+	IdleTime  int    `json:"idleTime"`  //maximum duration that may pass without any incoming network activity(0 means default and default is  30s, the actual value for the idle timeout is the minimum of this value and the peer's)
+	WaitTime  int    `json:"waitTime"`  //maximum time to wait for tunnel establishment(minimum is 50s)
+	Timeout   int    `json:"timeout"`   //timeout used in send or receive
 }
 
 func LoadServerCfg(path string) (*ServerCfg, error) {
@@ -165,6 +178,14 @@ func LoadServerCfg(path string) (*ServerCfg, error) {
 		}).Errorln("Unmarshal Server Config File error.")
 		return nil, err
 	}
+
+	intRestrict(&serverCfg.ICMP.BreakTime, 2, -1)
+
+	intRestrict(&serverCfg.QUIC.ShakeTime, 0, -1)
+	intRestrict(&serverCfg.QUIC.IdleTime, 0, -1)
+	intRestrict(&serverCfg.QUIC.WaitTime, 50, -1)
+	intRestrict(&serverCfg.QUIC.Timeout, 0, -1)
+
 	logrus.WithFields(logrus.Fields{
 		"CfgInfo": serverCfg,
 	}).Debugln("End Loading Server Config File.")
@@ -178,4 +199,18 @@ func TunExist(tunName string, serverCfg *ServerCfg) *TunnelCfg {
 		}
 	}
 	return nil
+}
+
+//restrict target in [low,high]
+func intRestrict(target *int, low, high int) {
+	if low >= 0 {
+		if *target < low {
+			*target = low
+		}
+	}
+	if high > 0 {
+		if *target > high {
+			*target = high
+		}
+	}
 }

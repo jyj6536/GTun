@@ -38,9 +38,6 @@ func ClientInit(clientCfg *cfgUtil.ClientCfg) error {
 			return err
 		}
 		if clientCfg.TCP.KeepaLvie > 0 { //use tcp keepalive to keep tcp nat session
-			if clientCfg.TCP.KeepaLvie < 5 {
-				clientCfg.TCP.KeepaLvie = 5
-			}
 			logrus.WithFields(logrus.Fields{
 				"Keepalive": clientCfg.TCP.KeepaLvie,
 			}).Debugln("Set keepalive for tcp conn.")
