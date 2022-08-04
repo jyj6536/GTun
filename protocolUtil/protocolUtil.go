@@ -16,7 +16,7 @@ import (
 	"github.com/songgao/water"
 )
 
-func ReadTunToTcp(conn *net.TCPConn, iface *water.Interface, tuName string) {
+func ReadTunToTcp(conn *net.TCPConn, iface *water.Interface, tuName string, timeout int) {
 	defer func() {
 		conn.Close()
 		iface.Close()
@@ -31,6 +31,10 @@ func ReadTunToTcp(conn *net.TCPConn, iface *water.Interface, tuName string) {
 			goto Stop
 		}
 
+		err = conn.SetWriteDeadline(time.Now().Add(time.Second * time.Duration(timeout)))
+		if err != nil {
+			goto Stop
+		}
 		err = TcpWrite(*conn, buf, n)
 		if err != nil {
 			goto Stop
@@ -83,7 +87,7 @@ Stop:
 	}).Errorln("ReadTcpToTun Error.")
 }
 
-func ReadTunToTcpClient(conn *net.TCPConn, iface *water.Interface) {
+func ReadTunToTcpClient(conn *net.TCPConn, iface *water.Interface, timeout int) {
 	defer func() {
 		conn.Close()
 		iface.Close()
@@ -98,6 +102,10 @@ func ReadTunToTcpClient(conn *net.TCPConn, iface *water.Interface) {
 			goto Stop
 		}
 
+		err = conn.SetWriteDeadline(time.Now().Add(time.Second * time.Duration(timeout)))
+		if err != nil {
+			goto Stop
+		}
 		err = TcpWrite(*conn, buf, n)
 		if err != nil {
 			goto Stop
@@ -193,7 +201,7 @@ func ReadTunToIcmp(conn *net.IPConn, iface *water.Interface, icmp *icmputil.ICMP
 	mutex := sync.Mutex{}
 
 	go func() { //this go routine send 0x04 to server periodicity to keep alive
-		ticker := time.NewTicker(time.Second*time.Duration(keepalive))
+		ticker := time.NewTicker(time.Second * time.Duration(keepalive))
 		for range ticker.C {
 			mutex.Lock()
 			data := icmp.Create(icmputil.Request, 0, icmp.Identifier, icmp.SeqNum, []byte{0x04})

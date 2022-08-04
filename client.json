@@ -4,7 +4,8 @@
     "tcp":{
         "ip":"104.224.178.14",
         "port":4567,
-        "keepalive":5
+        "keepalive":5,
+        "timeout":5
     },
     "icmp":{
         "ip":"104.224.178.14",

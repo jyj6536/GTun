@@ -47,16 +47,17 @@ var MutexQUIC sync.Mutex //this is used in AuthQUIC
 type Tcp struct {
 	Ip        string `json:"ip"`
 	Port      int    `json:"port"`
-	KeepaLvie int    `json:"keepalive"` //set keepalive_probes(count of keepalive probe packets) and keepalive_time(idle time before starting keepalive)
+	KeepaLvie int    `json:"keepalive"` //set keepalive_probes(count of keepalive probe packets) and keepalive_time(idle time before starting keepalive, 0 means that don't use keepalive)
+	Timeout   int    `json:"timeout"`   //timeout used in send(minimum is 5s)
 }
 
 type Icmp struct {
 	Ip         string `json:"ip"`
 	Identifier int    `json:"identifier"`
-	Timeout    int    `json:"timeout"`    //timeout used in connecting(default is 1s)
+	Timeout    int    `json:"timeout"`    //timeout used in connecting(minimum is 5s)
 	KeepaLvie  int    `json:"keepalive"`  //interval between two probe packets(default is 1s, should be less than breakTime)
 	RetryTimes int    `json:"retryTimes"` //when connecting to server, how many times client will retry if connecting times out(minimum is 1)
-	BreakTime  int    `json:"breakTime"`  //how long it will take before client abandons the tunnel when it don't receive any packet from the server(default is 2s)
+	BreakTime  int    `json:"breakTime"`  //how long it will take before client abandons the tunnel when it don't receive any packet from the server(minimum is 20s)
 }
 
 type QUIC struct {
@@ -65,8 +66,8 @@ type QUIC struct {
 	Port          int    `json:"port"`
 	AllowInSecure bool   `json:"allowInSecure"`
 	ShakeTime     int    `json:"shakeTime"` //ssl shakehand timeout(0 means default and default is 5s)
-	IdleTime      int    `json:"idleTime"`  //maximum duration that may pass without any incoming network activity(0 means default and default is  30s, the actual value for the idle timeout is the minimum of this value and the peer's)
-	Timeout       int    `json:"timeout"`   //timeout used in send or receive
+	IdleTime      int    `json:"idleTime"`  //maximum duration that may pass without any incoming network activity(0 means default and default is 30s, the actual value for the idle timeout is the minimum of this value and the peer's)
+	Timeout       int    `json:"timeout"`   //timeout used in send or receive(minimum is 5s)
 }
 
 type ClientCfg struct {
@@ -102,15 +103,16 @@ func LoadClientCfg(path string) (*ClientCfg, error) {
 		return nil, err
 	}
 
-	intRestrict(&clientCfg.ICMP.Timeout, 1, -1)
+	intRestrict(&clientCfg.TCP.Timeout, 5, -1)
+
+	intRestrict(&clientCfg.ICMP.Timeout, 5, -1)
 	intRestrict(&clientCfg.ICMP.RetryTimes, 1, -1)
 	intRestrict(&clientCfg.ICMP.BreakTime, 2, -1)
-	intRestrict(&clientCfg.ICMP.KeepaLvie, 1, clientCfg.ICMP.BreakTime-1)
+	intRestrict(&clientCfg.ICMP.KeepaLvie, 1, clientCfg.ICMP.BreakTime-1) //ICMP.KeepaLvie should be smaller than ICMP.BreakTime so that at least one probe packet can be sent
 
-	//avoid negative number
 	intRestrict(&clientCfg.QUIC.ShakeTime, 0, -1)
 	intRestrict(&clientCfg.QUIC.IdleTime, 0, -1)
-	intRestrict(&clientCfg.QUIC.Timeout, 0, -1)
+	intRestrict(&clientCfg.QUIC.Timeout, 5, -1)
 
 	intRestrict(&clientCfg.MutilQueue, 1, 8)
 
@@ -137,15 +139,16 @@ type ServerCfg struct {
 }
 
 type TCPCfg struct {
-	Enable bool   `json:"enable"`
-	IP     string `json:"ip"`
-	Port   int    `json:"port"`
+	Enable  bool   `json:"enable"`
+	IP      string `json:"ip"`
+	Port    int    `json:"port"`
+	Timeout int    `json:"timeout"` //timeout used in send(minimum is 5s)
 }
 
 type ICMPCfg struct {
 	Enable    bool   `json:"enable"`
 	IP        string `json:"ip"`
-	BreakTime int    `json:"breakTime"` //how long it will take before server abandons the tunnel when it don't receive any packet from the client
+	BreakTime int    `json:"breakTime"` //how long it will take before server abandons the tunnel when it don't receive any packet from the client(minimum is 20s)
 }
 
 type QUICCfg struct {
@@ -157,7 +160,7 @@ type QUICCfg struct {
 	ShakeTime int    `json:"shakeTime"` //ssl shakehand timeout(0 means default and default is 5s)
 	IdleTime  int    `json:"idleTime"`  //maximum duration that may pass without any incoming network activity(0 means default and default is  30s, the actual value for the idle timeout is the minimum of this value and the peer's)
 	WaitTime  int    `json:"waitTime"`  //maximum time to wait for tunnel establishment(minimum is 50s)
-	Timeout   int    `json:"timeout"`   //timeout used in send or receive
+	Timeout   int    `json:"timeout"`   //timeout used in send or receive(minimun is 5s)
 }
 
 func LoadServerCfg(path string) (*ServerCfg, error) {
@@ -179,12 +182,14 @@ func LoadServerCfg(path string) (*ServerCfg, error) {
 		return nil, err
 	}
 
-	intRestrict(&serverCfg.ICMP.BreakTime, 2, -1)
+	intRestrict(&serverCfg.TCP.Timeout, 5, -1)
+
+	intRestrict(&serverCfg.ICMP.BreakTime, 20, -1)
 
 	intRestrict(&serverCfg.QUIC.ShakeTime, 0, -1)
 	intRestrict(&serverCfg.QUIC.IdleTime, 0, -1)
 	intRestrict(&serverCfg.QUIC.WaitTime, 50, -1)
-	intRestrict(&serverCfg.QUIC.Timeout, 0, -1)
+	intRestrict(&serverCfg.QUIC.Timeout, 5, -1)
 
 	logrus.WithFields(logrus.Fields{
 		"CfgInfo": serverCfg,

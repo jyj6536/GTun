@@ -313,7 +313,7 @@ func Auth(conn *net.TCPConn, serverCfg *cfgUtil.ServerCfg) {
 				"TuName": tuName,
 			}).Debugln("Connect Complete.")
 
-			TcpTunnelStart(tuSts)
+			TcpTunnelStart(tuSts, serverCfg.TCP.Timeout)
 
 			return
 
@@ -325,7 +325,7 @@ func Auth(conn *net.TCPConn, serverCfg *cfgUtil.ServerCfg) {
 	}
 }
 
-func TcpTunnelStart(tuSts *cfgUtil.TunnelSts) error {
+func TcpTunnelStart(tuSts *cfgUtil.TunnelSts, timeout int) error {
 	ccfg := &cfgUtil.ClientCfg{}
 	ccfg.DeviceType = tuSts.TunInfo.DeviceType
 	ccfg.DeviceName = tuSts.TunInfo.DeviceName
@@ -340,7 +340,7 @@ func TcpTunnelStart(tuSts *cfgUtil.TunnelSts) error {
 	connSet := tuSts.TcpConn
 
 	for i := 0; i < len(connSet); i++ {
-		go protocolutil.ReadTunToTcp(connSet[i], ifaceSet[i], tuSts.TunInfo.TunnelName)
+		go protocolutil.ReadTunToTcp(connSet[i], ifaceSet[i], tuSts.TunInfo.TunnelName, timeout)
 		go protocolutil.ReadTcpToTun(connSet[i], ifaceSet[i], tuSts.TunInfo.TunnelName)
 	}
 

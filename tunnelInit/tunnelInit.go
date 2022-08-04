@@ -54,7 +54,7 @@ func ClientInit(clientCfg *cfgUtil.ClientCfg) error {
 		cfgUtil.TunStsClient.ActiveConn = int32(len(connSet))
 
 		for i := 0; i < int(cfgUtil.TunStsClient.ActiveConn); i++ {
-			go protocolutil.ReadTunToTcpClient(connSet[i], ifaceSet[i])
+			go protocolutil.ReadTunToTcpClient(connSet[i], ifaceSet[i],clientCfg.TCP.Timeout)
 			go protocolutil.ReadTcpToTunClient(connSet[i], ifaceSet[i])
 		}
 	} else if clientCfg.Protocol == "icmp" {

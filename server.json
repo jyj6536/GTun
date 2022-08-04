@@ -3,7 +3,8 @@
     "tcp":{
         "enable":true,
         "port":6123,
-        "ip":"0.0.0.0"
+        "ip":"0.0.0.0",
+        "timeout":5
     },
     "icmp":{
         "enable":true,
