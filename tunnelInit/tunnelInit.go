@@ -79,7 +79,7 @@ func ClientInit(clientCfg *cfgUtil.ClientCfg) error {
 		}()
 
 		go protocolutil.ReadIcmpToTun(conn, ifaceSet[0])
-		go protocolutil.ReadTunToIcmp(conn, ifaceSet[0], icmp, clientCfg.ICMP.KeepaLvie)
+		go protocolutil.ReadTunToIcmp(conn, ifaceSet[0], icmp, clientCfg.ICMP.Keepalvie)
 	} else if clientCfg.Protocol == "quic" {
 		streamSet, err := authutil.AuthQUICClient(clientCfg)
 		if err != nil {
