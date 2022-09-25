@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"fmt"
 	"math/rand"
 	"net"
 	"strconv"
@@ -22,353 +21,24 @@ import (
 	"github.com/songgao/water"
 )
 
-func Auth(conn *net.TCPConn, serverCfg *cfgUtil.ServerCfg) {
-	var tuName string
-	var tuSts *cfgUtil.TunnelSts
-	var ag *cipherUtil.AesGcm
-	for {
-		data := make([]byte, 65536)
-		n, err := protocolutil.TcpRead(*conn, data)
-		if err != nil {
-			logrus.Errorln("Auth Failed.")
-			conn.Close()
-			return
-		}
-		// client create main conn
-		// client send 0x01,tunnelName
-		// server send 0x02,randInt64 rd64
-		// client send 0x02,rd64+1
-		// server send 0x03,randInt64 rd64_2
-		// client get rd64_2,this int for subsequent connect
-		/*subsequent connect*/
-		// loop(for queue in multiqueue)
-		// client send 0x03,tunnelName
-		// server send 0x04,ok
-		// client send 0x04,rd64_2+1
-		// server send 0x05,ok
-		// goto loop
-		// client use main conn send 0x06,done
-		switch data[0] {
-		case 0x01: //start auth, actions according to the first byte of data
-			tuName = string(data[1:n])
-			tunInfo := cfgUtil.TunExist(tuName, serverCfg)
-			if tunInfo == nil {
-				logrus.WithFields(logrus.Fields{
-					"TuName": tuName,
-					"Step":   "Step1",
-				}).Errorln("Tunnel doesn't Exist.")
-				retInfo := []byte{0x01, '!', 'o', 'k'}
-				protocolutil.TcpWrite(*conn, retInfo, len(retInfo))
-				conn.Close()
-				return
-			}
-			_, ok := cfgUtil.TunStsMap.Load(tuName)
-			if ok {
-				logrus.WithFields(logrus.Fields{
-					"TuName": tuName,
-					"Step":   "Step1",
-				}).Errorln("Tunnel already in Auth.")
-				retInfo := []byte{0x01, '!', 'o', 'k'}
-				protocolutil.TcpWrite(*conn, retInfo, len(retInfo))
-				conn.Close()
-				return
-			}
-
-			rand.Seed(time.Now().UnixNano())
-			rand64 := rand.Int63()
-
-			tuSts = &cfgUtil.TunnelSts{TunInfo: tunInfo, TokenInt: rand64, Sts: "Step1"}
-
-			ag = &cipherUtil.AesGcm{}
-			err = ag.Init(tunInfo.Passwd)
-			if err != nil {
-				logrus.WithFields(logrus.Fields{
-					"TuName": tuName,
-					"Error":  err,
-					"Step":   "Step1",
-				}).Errorln("Step1 Failed.")
-				retInfo := []byte{0x01, '!', 'o', 'k'}
-				protocolutil.TcpWrite(*conn, retInfo, len(retInfo))
-				conn.Close()
-				return
-			}
-			tuSts.AesCipher = ag
-
-			data, err = ag.Encrypt([]byte(strconv.FormatInt(rand64, 10)))
-			if err != nil {
-				logrus.WithFields(logrus.Fields{
-					"TuName": tuName,
-					"Error":  err,
-					"Step":   "Step1",
-				}).Errorln("Step1 Failed.")
-				retInfo := []byte{0x01, '!', 'o', 'k'}
-				protocolutil.TcpWrite(*conn, retInfo, len(retInfo))
-				conn.Close()
-				return
-			}
-
-			retInfo := append([]byte{0x02}, data...) //0x02,a random Int64 number
-
-			err = protocolutil.TcpWrite(*conn, retInfo, len(retInfo))
-
-			if err != nil {
-				logrus.WithFields(logrus.Fields{
-					"TuName": tuName,
-					"Step":   "Step1",
-					"Error":  err,
-				}).Errorln("Step1 Failed.")
-				retInfo := []byte{0x01, '!', 'o', 'k'}
-				protocolutil.TcpWrite(*conn, retInfo, len(retInfo))
-				conn.Close()
-				return
-			}
-
-			cfgUtil.TunStsMap.Store(tuName, tuSts)
-		case 0x02:
-			if tuSts.Sts != "Step1" {
-				cfgUtil.TunStsMap.Delete(tuName)
-				logrus.WithFields(logrus.Fields{
-					"Error":  errors.New("wrong stage"),
-					"TuName": tuName,
-					"Step":   tuSts.Sts,
-				}).Errorln("Step2 Failed.")
-				retInfo := []byte{0x02, '!', 'o', 'k'}
-				protocolutil.TcpWrite(*conn, retInfo, len(retInfo))
-				conn.Close()
-				return
-			}
-
-			data, err = ag.Decrypt(data[1:n])
-			if err != nil {
-				cfgUtil.TunStsMap.Delete(tuName)
-				logrus.WithFields(logrus.Fields{
-					"Step":   "Step2",
-					"TuName": tuName,
-					"Error":  err,
-				}).Errorln("Step2 Failed.")
-				retInfo := []byte{0x02, '!', 'o', 'k'}
-				protocolutil.TcpWrite(*conn, retInfo, len(retInfo))
-				conn.Close()
-				return
-			}
-
-			rand64, err := strconv.ParseInt(string(data), 10, 64)
-			if err != nil || rand64 != tuSts.TokenInt+1 {
-				cfgUtil.TunStsMap.Delete(tuName)
-				if err == nil {
-					err = errors.New("received wrong TokenInt")
-				}
-				logrus.WithFields(logrus.Fields{
-					"Error":  err,
-					"TuName": tuName,
-					"Step":   "Step2",
-				}).Errorln("Step2 Failed.")
-				retInfo := []byte{0x02, '!', 'o', 'k'}
-				protocolutil.TcpWrite(*conn, retInfo, len(retInfo))
-				conn.Close()
-				return
-			}
-
-			tuSts.Sts = "Step2"
-
-			rand64 = rand.Int63()
-
-			tuSts.TokenInt = rand64
-
-			data, err = ag.Encrypt([]byte(strconv.FormatInt(rand64, 10)))
-			if err != nil {
-				cfgUtil.TunStsMap.Delete(tuName)
-				logrus.WithFields(logrus.Fields{
-					"TuName": tuName,
-					"Error":  err,
-					"Step":   "Step2",
-				}).Errorln("Step2 failed.")
-				retInfo := []byte{0x02, '!', 'o', 'k'}
-				protocolutil.TcpWrite(*conn, retInfo, len(retInfo))
-				conn.Close()
-				return
-			}
-
-			retInfo := append([]byte{0x03}, data...) //0x03,a random Int64 number
-
-			err = protocolutil.TcpWrite(*conn, retInfo, len(retInfo))
-
-			if err != nil {
-				cfgUtil.TunStsMap.Delete(tuName)
-				logrus.WithFields(logrus.Fields{
-					"TuName": tuName,
-					"Step":   "Step2",
-					"Error":  err,
-				}).Errorln("Auth Failed.")
-				retInfo := []byte{0x02, '!', 'o', 'k'}
-				protocolutil.TcpWrite(*conn, retInfo, len(retInfo))
-				conn.Close()
-			}
-		case 0x03:
-			tuName = string(data[1:n])
-			value, ok := cfgUtil.TunStsMap.Load(tuName)
-			if !ok {
-				logrus.WithFields(logrus.Fields{
-					"TuName": tuName,
-					"Step":   "Step3",
-					"Error":  errors.New("tuName dosen't exist"),
-				}).Errorln("Step3 failed.")
-				retInfo := []byte{0x03, '!', 'o', 'k'}
-				protocolutil.TcpWrite(*conn, retInfo, len(retInfo))
-				conn.Close()
-				return
-			}
-
-			tuSts = value.(*cfgUtil.TunnelSts)
-
-			if tuSts.Sts != "Step2" {
-				logrus.WithFields(logrus.Fields{
-					"Error":  errors.New("wrong stage"),
-					"Step":   "Step3",
-					"TuName": tuName,
-				}).Errorln("Step3 Failed.")
-				conn.Close()
-				return
-			}
-
-			ag = tuSts.AesCipher
-
-			retInfo := []byte{0x04, 'o', 'k'}
-			err = protocolutil.TcpWrite(*conn, retInfo, len(retInfo))
-			if err != nil {
-				logrus.WithFields(logrus.Fields{
-					"TuName": tuName,
-					"Step":   "Step3",
-					"Error":  err,
-				}).Errorln("Step3 failed.")
-				conn.Close()
-				return
-			}
-		case 0x04:
-			data, err = ag.Decrypt(data[1:n])
-			if err != nil {
-				logrus.WithFields(logrus.Fields{
-					"Step":   "Step4",
-					"TuName": tuName,
-					"Error":  err,
-				}).Errorln("Step4 failed.")
-				retInfo := []byte{0x04, '!', 'o', 'k'}
-				protocolutil.TcpWrite(*conn, retInfo, len(retInfo))
-				conn.Close()
-				return
-			}
-			rand64, err := strconv.ParseInt(string(data), 10, 64)
-			if err != nil || rand64 != tuSts.TokenInt+1 {
-				if err == nil {
-					err = errors.New("received wrong TokenInt")
-				}
-				logrus.WithFields(logrus.Fields{
-					"Error":  err,
-					"TuName": tuName,
-					"Step":   "Step4",
-				}).Errorln("Step4 failed.")
-				retInfo := []byte{0x04, '!', 'o', 'k'}
-				protocolutil.TcpWrite(*conn, retInfo, len(retInfo))
-				conn.Close()
-				return
-			}
-
-			retInfo := []byte{0x05, 'o', 'k'}
-			protocolutil.TcpWrite(*conn, retInfo, len(retInfo))
-			if err != nil {
-				logrus.WithFields(logrus.Fields{
-					"TuName": tuName,
-					"Step":   "Step4",
-					"Error":  err,
-				}).Errorln("Step4 failed.")
-				conn.Close()
-				return
-			}
-
-			tuSts.TcpConn = append(tuSts.TcpConn, conn)
-
-			tuSts.TokenInt += 1
-
-			logrus.WithFields(logrus.Fields{
-				"TuName":      tuName,
-				"Client Addr": conn.RemoteAddr(),
-			}).Debugln("Create tcp connect with client.")
-			return
-		case 0x06:
-			sts := string(data[1:n])
-			if sts != "done" {
-				cfgUtil.TunStsMap.Delete(tuName)
-				logrus.WithFields(logrus.Fields{
-					"Error":  sts,
-					"TuName": tuName,
-					"Step":   "Step6",
-				}).Errorln("Step6 failed.")
-				conn.Close()
-				return
-			}
-			tuSts.TcpConn = append(tuSts.TcpConn, conn)
-			tuSts.Sts = "Step6"
-			tuSts.ActiveConn = int32(len(tuSts.TcpConn))
-			logrus.WithFields(logrus.Fields{
-				"TuName": tuName,
-			}).Debugln("Connect Complete.")
-
-			TcpTunnelStart(tuSts, serverCfg.TCP.Timeout)
-
-			return
-
-		default:
-			logrus.Errorln("Bad Request.")
-			conn.Close()
-			return
-		}
-	}
-}
-
-func TcpTunnelStart(tuSts *cfgUtil.TunnelSts, timeout int) error {
-	ccfg := &cfgUtil.ClientCfg{}
-	ccfg.DeviceType = tuSts.TunInfo.DeviceType
-	ccfg.DeviceName = tuSts.TunInfo.DeviceName
-	ccfg.Network = tuSts.TunInfo.Network
-	ccfg.MutilQueue = len(tuSts.TcpConn)
-
-	ifaceSet, err := tunutil.NewTun(ccfg)
-	if err != nil {
-		return err
-	}
-
-	connSet := tuSts.TcpConn
-
-	for i := 0; i < len(connSet); i++ {
-		go protocolutil.ReadTunToTcp(connSet[i], ifaceSet[i], tuSts.TunInfo.TunnelName, timeout)
-		go protocolutil.ReadTcpToTun(connSet[i], ifaceSet[i], tuSts.TunInfo.TunnelName)
-	}
-
-	return err
-}
-
-func IcmpTunnelStart(tuSts *cfgUtil.TunnelSts, icmp *icmputil.ICMP, addr net.Addr, key string) error {
+func IcmpTunnelStart(tunCtrl *cfgUtil.TunCtrl, icmp *icmputil.ICMP, addr net.Addr, key string) error {
 
 	value, _ := cfgUtil.IcmpTunStsCtrl.Load(key)
 	icmpTunCtrl := value.(*cfgUtil.IcmpTunCtrl)
 
-	ccfg := &cfgUtil.ClientCfg{}
-	ccfg.DeviceType = tuSts.TunInfo.DeviceType
-	ccfg.DeviceName = tuSts.TunInfo.DeviceName
-	ccfg.Network = tuSts.TunInfo.Network
-	ccfg.MutilQueue = 1 //for icmp tunnel, we don't use MutilQueue
+	ccfg := &cfgUtil.ClientCfg{DeviceType: tunCtrl.TunInfo.DeviceType, DeviceName: tunCtrl.TunInfo.DeviceName, Network: tunCtrl.TunInfo.Network}
 
-	ifaceSet, err := tunutil.NewTun(ccfg)
+	iface, err := tunutil.NewTun(ccfg)
 	if err != nil {
 		return err
 	}
 
-	icmpTunCtrl.Iface = ifaceSet[0]
+	icmpTunCtrl.Iface = iface
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	icmpTunCtrl.Time = time.Now()
 	icmpTunCtrl.CancelFunc = cancelFunc
 
-	go func(iface *water.Interface, icmp *icmputil.ICMP, addr net.Addr, ctx context.Context, tuSts *cfgUtil.TunnelSts) { //read tun to icmp
+	go func(iface *water.Interface, icmp *icmputil.ICMP, addr net.Addr, ctx context.Context, tunCtrl *cfgUtil.TunCtrl) { //read tun to icmp
 		defer func() {
 			iface.Close()
 			logrus.WithFields(logrus.Fields{
@@ -394,271 +64,12 @@ func IcmpTunnelStart(tuSts *cfgUtil.TunnelSts, icmp *icmputil.ICMP, addr net.Add
 				icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
 			}
 		}
-	}(ifaceSet[0], icmp, addr, ctx, tuSts)
+	}(iface, icmp, addr, ctx, tunCtrl)
 
 	return err
 }
 
-func QUICTUnnelStart(tuSts *cfgUtil.TunnelSts, timeout int) error {
-	ccfg := &cfgUtil.ClientCfg{}
-	ccfg.DeviceType = tuSts.TunInfo.DeviceType
-	ccfg.DeviceName = tuSts.TunInfo.DeviceName
-	ccfg.Network = tuSts.TunInfo.Network
-	ccfg.MutilQueue = len(tuSts.QUICStream)
-
-	ifaceSet, err := tunutil.NewTun(ccfg)
-	if err != nil {
-		return err
-	}
-
-	streamSet := tuSts.QUICStream
-	for i := 0; i < len(streamSet); i++ {
-		go quicutil.ReadTunToQUIC(streamSet[i], ifaceSet[i], tuSts.TunInfo.TunnelName, timeout)
-		go quicutil.ReadQUICToTun(streamSet[i], ifaceSet[i], tuSts.TunInfo.TunnelName, timeout)
-	}
-	return err
-}
-
-func AuthClient(clientCfg *cfgUtil.ClientCfg) ([]*net.TCPConn, error) {
-	addr := &net.TCPAddr{Port: clientCfg.TCP.Port, IP: net.ParseIP(clientCfg.TCP.Ip)}
-
-	ag := &cipherUtil.AesGcm{}
-	err := ag.Init(clientCfg.Passwd)
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"Error": err,
-		}).Errorln("Create AesCipher failed.")
-		return nil, err
-	}
-
-	conn, err := net.DialTCP("tcp", nil, addr)
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"Server Addr": addr,
-			"Error":       err,
-		}).Errorln("Cann't connect to server.")
-		return nil, err
-	}
-
-	tunNameBuf := []byte(clientCfg.TunnelName)
-	//step1
-	data := append([]byte{0x01}, tunNameBuf...)
-	err = protocolutil.TcpWrite(*conn, data, len(data))
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"Step":  "Step1",
-			"Error": err,
-		}).Errorln("Auth Failed.")
-		conn.Close()
-		return nil, err
-	}
-
-	data = make([]byte, 65536)
-	n, err := protocolutil.TcpRead(*conn, data)
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"Step":  "Step1",
-			"Error": err,
-		}).Errorln("Auth Failed.")
-		conn.Close()
-		return nil, err
-	}
-	//setp2
-	if data[0] != 0x02 {
-		err = errors.New(string(data[1:n]))
-		logrus.WithFields(logrus.Fields{
-			"Step":  "Step2",
-			"Error": err,
-		}).Errorln("Auth Failed.")
-		conn.Close()
-		return nil, err
-	}
-	// get rand64
-	data, err = ag.Decrypt(data[1:n])
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"Step":  "Step2",
-			"Error": err,
-		}).Errorln("Decrypt failed.")
-		conn.Close()
-		return nil, err
-	}
-	rand64, err := strconv.ParseInt(string(data), 10, 64)
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"Error": err,
-			"Step":  "Step2",
-		}).Errorln("Auth Failed.")
-		conn.Close()
-		return nil, err
-	}
-	// rand64 = rand64+1
-	rand64 += 1
-
-	data, err = ag.Encrypt([]byte(strconv.FormatInt(rand64, 10)))
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"Step":  "Step2",
-			"Error": err,
-		}).Errorln("Encrypt failed.")
-		conn.Close()
-		return nil, err
-	}
-	data = append([]byte{0x02}, data...)
-	// send rand64 to server
-	err = protocolutil.TcpWrite(*conn, data, len(data))
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"Error": err,
-			"Step":  "Step2",
-		}).Errorln("Auth Failed.")
-		conn.Close()
-		return nil, err
-	}
-	//step3
-	data = make([]byte, 65536)
-	n, err = protocolutil.TcpRead(*conn, data)
-	if err != nil {
-		conn.Close()
-		return nil, err
-	}
-
-	if data[0] != 0x03 {
-		err = errors.New(string(data[1:n]))
-		logrus.WithFields(logrus.Fields{
-			"Step":  "Step2",
-			"Error": err,
-		}).Errorln("Auth Failed.")
-		conn.Close()
-		return nil, err
-	}
-	// get rand64 for subsequent connect
-	data, err = ag.Decrypt(data[1:n])
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"Error": err,
-			"Step":  "Step3",
-		}).Errorln("Decrypt Failed.")
-		conn.Close()
-		return nil, err
-	}
-	rand64, err = strconv.ParseInt(string(data), 10, 64)
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"Step":  "Step3",
-			"Error": err,
-		}).Errorln("Auth Failed")
-		conn.Close()
-		return nil, err
-	}
-
-	var connSet []*net.TCPConn
-	if clientCfg.Protocol == "tcp" {
-		connSet = AuthTcp(rand64, clientCfg, addr, ag)
-		connSet = append(connSet, conn)
-	}
-
-	data = append([]byte{0x06}, []byte{'d', 'o', 'n', 'e'}...)
-	err = protocolutil.TcpWrite(*conn, []byte{0x06, 'd', 'o', 'n', 'e'}, len(data))
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"Step":  "Step6",
-			"Error": err,
-		}).Errorln("Auth Failed")
-		conn.Close()
-		return nil, err
-	}
-	connSet = append(connSet, conn)
-	return connSet, nil
-}
-
-func AuthTcp(rand64 int64, clientCfg *cfgUtil.ClientCfg, addr *net.TCPAddr, ag *cipherUtil.AesGcm) []*net.TCPConn {
-	var data []byte
-	var n int
-	var connSet []*net.TCPConn
-	tunNameBuf := []byte(clientCfg.TunnelName)
-
-	for i := 0; i < clientCfg.MutilQueue-1; i++ {
-		conn, err := net.DialTCP("tcp", nil, addr)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"Server Addr": addr,
-				"Error":       err,
-			}).Errorln("Cann't connect to server.")
-			conn.Close()
-			continue
-		}
-
-		data = append([]byte{0x03}, tunNameBuf...)
-		err = protocolutil.TcpWrite(*conn, data, len(data))
-		if err != nil {
-			conn.Close()
-			continue
-		}
-
-		data = make([]byte, 65536)
-		n, err = protocolutil.TcpRead(*conn, data)
-		if err != nil {
-			conn.Close()
-			continue
-		}
-
-		if data[0] != 0x04 {
-			logrus.WithFields(logrus.Fields{
-				"Step":  "Step3",
-				"Error": string(data[1:n]),
-			}).Errorln("Auth Failed.")
-			conn.Close()
-			continue
-		}
-
-		data, err = ag.Encrypt([]byte(strconv.FormatInt(rand64+1, 10)))
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"Step":  "Step4",
-				"Error": err,
-			}).Errorln("Auth Failed.")
-			conn.Close()
-			continue
-		}
-		data = append([]byte{0x04}, data...)
-		err = protocolutil.TcpWrite(*conn, data, len(data))
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"Step":  "Step3",
-				"Error": err,
-			}).Errorln("Auth Failed.")
-			conn.Close()
-			continue
-		}
-
-		data = make([]byte, 65536)
-		n, err = protocolutil.TcpRead(*conn, data)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"Step":  "Step4",
-				"Error": err,
-			}).Errorln("Auth Failed.")
-			conn.Close()
-			continue
-		}
-		if data[0] != 0x05 {
-			logrus.WithFields(logrus.Fields{
-				"Step":  "Step4",
-				"Error": string(data[1:n]),
-			}).Errorln("Auth Failed.")
-			conn.Close()
-			continue
-		}
-
-		connSet = append(connSet, conn)
-
-		rand64 += 1
-	}
-	return connSet
-}
-
-func AuthIcmp(icmp *icmputil.ICMP, addr net.Addr, serverCfg *cfgUtil.ServerCfg) {
+func IcmpVerify(icmp *icmputil.ICMP, addr net.Addr, serverCfg *cfgUtil.ServerCfg) {
 	data := icmp.Data
 	switch data[0] {
 	case 0x01:
@@ -667,22 +78,22 @@ func AuthIcmp(icmp *icmputil.ICMP, addr net.Addr, serverCfg *cfgUtil.ServerCfg) 
 		if tunInfo == nil {
 			logrus.WithFields(logrus.Fields{
 				"TuName": tuName,
-				"Step":   "Step1",
+				"Step":   "0x01",
 			}).Errorln("Tunnel doesn't Exist.")
 			retIcmp := icmp.Create(icmputil.Reply, icmp.Code, icmp.Identifier, icmp.SeqNum, []byte{0x01, '!', 'o', 'k'})
 			icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
 			return
 		}
-		value, ok := cfgUtil.TunStsMap.Load(tuName)
+		value, ok := cfgUtil.TunCtrlMap.Load(tuName)
 		if ok {
-			tuSts := value.(*cfgUtil.TunnelSts)
-			if tuSts.TokenInt != 0 && tuSts.Sts == "Step1" {
-				intEnc, err := tuSts.AesCipher.Encrypt([]byte(strconv.FormatInt(tuSts.TokenInt, 10)))
+			tunCtrl := value.(*cfgUtil.TunCtrl)
+			if tunCtrl.TokenInt != 0 && tunCtrl.Sts == "0x01" {
+				intEnc, err := tunCtrl.AesCipher.Encrypt([]byte(strconv.FormatInt(tunCtrl.TokenInt, 10)))
 				if err != nil {
 					logrus.WithFields(logrus.Fields{
 						"TuName": tuName,
 						"Error":  err,
-						"Step":   "Step1",
+						"Step":   "0x01",
 					}).Errorln("Step1 Failed.")
 					retIcmp := icmp.Create(icmputil.Reply, icmp.Code, icmp.Identifier, icmp.SeqNum, []byte{0x01, '!', 'o', 'k'})
 					icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
@@ -714,14 +125,14 @@ func AuthIcmp(icmp *icmputil.ICMP, addr net.Addr, serverCfg *cfgUtil.ServerCfg) 
 				return
 			}
 
-			tuSts := &cfgUtil.TunnelSts{TunInfo: tunInfo, TokenInt: rand64, Sts: "Step1", AesCipher: ag}
+			tunCtrl := &cfgUtil.TunCtrl{TunInfo: tunInfo, TokenInt: rand64, Sts: "0x01", AesCipher: ag}
 
-			intEnc, err := ag.Encrypt([]byte(strconv.FormatInt(tuSts.TokenInt, 10)))
+			intEnc, err := ag.Encrypt([]byte(strconv.FormatInt(tunCtrl.TokenInt, 10)))
 			if err != nil {
 				logrus.WithFields(logrus.Fields{
 					"TuName": tuName,
 					"Error":  err,
-					"Step":   "Step1",
+					"Step":   "0x01",
 				}).Errorln("Step1 Failed.")
 				retIcmp := icmp.Create(icmputil.Reply, icmp.Code, icmp.Identifier, icmp.SeqNum, []byte{0x01, '!', 'o', 'k'})
 				icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
@@ -733,8 +144,8 @@ func AuthIcmp(icmp *icmputil.ICMP, addr net.Addr, serverCfg *cfgUtil.ServerCfg) 
 			icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
 
 			key := addr.String() + "+" + strconv.FormatUint(uint64(icmp.Identifier), 10)
-			cfgUtil.TunStsMap.Store(tuName, tuSts)
-			cfgUtil.IcmpTunStsCtrl.Store(key, &cfgUtil.IcmpTunCtrl{Time: time.Now(), TuName: tuName, TuSts: tuSts})
+			cfgUtil.TunCtrlMap.Store(tuName, tunCtrl)
+			cfgUtil.IcmpTunStsCtrl.Store(key, &cfgUtil.IcmpTunCtrl{Time: time.Now(), TuName: tuName, TunCtrl: tunCtrl})
 
 			return
 		}
@@ -749,15 +160,15 @@ func AuthIcmp(icmp *icmputil.ICMP, addr net.Addr, serverCfg *cfgUtil.ServerCfg) 
 
 		icmpTunCtrl := value.(*cfgUtil.IcmpTunCtrl)
 		tuName := icmpTunCtrl.TuName
-		tuSts := icmpTunCtrl.TuSts
+		tunCtrl := icmpTunCtrl.TunCtrl
 
-		if tuSts.Sts == "Step1" {
-			intDec, err := tuSts.AesCipher.Decrypt(data[1:])
+		if tunCtrl.Sts == "0x01" {
+			intDec, err := tunCtrl.AesCipher.Decrypt(data[1:])
 			if err != nil {
 				logrus.WithFields(logrus.Fields{
-					"Step":   "Step2",
 					"TuName": tuName,
 					"Error":  err,
+					"Step":   "Step2",
 				}).Errorln("Step2 Failed.")
 				retIcmp := icmp.Create(icmputil.Reply, icmp.Code, icmp.Identifier, icmp.SeqNum, []byte{0x02, '!', 'o', 'k'})
 				icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
@@ -765,19 +176,19 @@ func AuthIcmp(icmp *icmputil.ICMP, addr net.Addr, serverCfg *cfgUtil.ServerCfg) 
 			}
 
 			rand64, err := strconv.ParseInt(string(intDec), 10, 64)
-			if err != nil || rand64 != tuSts.TokenInt+1 {
+			if err != nil || rand64 != tunCtrl.TokenInt+1 {
 				retIcmp := icmp.Create(icmputil.Reply, icmp.Code, icmp.Identifier, icmp.SeqNum, []byte{0x02, '!', 'o', 'k'})
 				icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
 				return
 			}
 		}
-		err := IcmpTunnelStart(tuSts, icmp, addr, key)
+		err := IcmpTunnelStart(tunCtrl, icmp, addr, key)
 		if err != nil {
 			retIcmp := icmp.Create(icmputil.Reply, icmp.Code, icmp.Identifier, icmp.SeqNum, []byte{0x02, '!', 'o', 'k'})
 			icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
 			return
 		}
-		tuSts.Sts = "Step2"
+		tunCtrl.Sts = "0x02"
 		retIcmp := icmp.Create(icmputil.Reply, 0, icmp.Identifier, icmp.SeqNum, []byte{0x03, 'o', 'k'})
 		icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
 
@@ -786,7 +197,7 @@ func AuthIcmp(icmp *icmputil.ICMP, addr net.Addr, serverCfg *cfgUtil.ServerCfg) 
 	}
 }
 
-func AuthlClientIcmp(clientCfg *cfgUtil.ClientCfg) (*net.IPConn, *icmputil.ICMP, error) {
+func IcmpClientVerify(clientCfg *cfgUtil.ClientCfg) (*net.IPConn, *icmputil.ICMP, error) {
 	ag := &cipherUtil.AesGcm{}
 	err := ag.Init(clientCfg.Passwd)
 	if err != nil {
@@ -997,154 +408,493 @@ func AuthlClientIcmp(clientCfg *cfgUtil.ClientCfg) (*net.IPConn, *icmputil.ICMP,
 	return conn, icmp, nil
 }
 
-func AuthQUIC(stream quic.Stream, serverCfg *cfgUtil.ServerCfg) {
-	buf := make([]byte, 65536)
-	n, err := quicutil.ReadQUIC(stream, buf)
+func Auth(ctx context.Context, dataChan chan []byte, serverCfg *cfgUtil.ServerCfg) {
+	var tuName string
+	var retInfo string
+	var retBytes []byte
+	var tunInfo *cfgUtil.TunnelCfg
+	var ag *cipherUtil.AesGcm
+	var tunCtrl *cfgUtil.TunCtrl
+	var rand64 int64
+	var err error
+	for {
+		select {
+		case <-ctx.Done():
+			logrus.WithFields(logrus.Fields{
+				"TuName": tuName,
+			}).Debugln("Auth Finished.")
+			return
+		case data := <-dataChan:
+			if len(data) < 1 {
+				retInfo = "Bad Request."
+				retBytes = []byte{0x10}
+				goto Error
+			}
+			switch data[0] {
+			case 0x01:
+				tuName = string(data[1:])
+				tunInfo = cfgUtil.TunExist(tuName, serverCfg)
+				if tunInfo == nil {
+					logrus.WithFields(logrus.Fields{
+						"TuName": tuName,
+						"Step":   "0x01",
+					}).Errorln("Tunnel doesn't Exist.")
+					retInfo = "Tunnel doesn't Exist."
+					retBytes = []byte{0x01}
+					goto Error
+				}
+
+				value, ok := cfgUtil.TunCtrlMap.Load(tuName)
+				if !ok {
+					ag = &cipherUtil.AesGcm{}
+					err = ag.Init(tunInfo.Passwd)
+					if err != nil {
+						logrus.WithFields(logrus.Fields{
+							"TuName": tuName,
+							"Error":  err,
+							"Step":   "0x01",
+						}).Errorln("Cipher Init Failed.")
+						retInfo = "Cipher Init Failed."
+						retBytes = []byte{0x01}
+						goto Error
+					}
+
+					tunCtrl = &cfgUtil.TunCtrl{TunInfo: tunInfo, AesCipher: ag}
+					cfgUtil.TunCtrlMap.Store(tuName, tunCtrl)
+				} else {
+					tunCtrl = value.(*cfgUtil.TunCtrl)
+				}
+
+				if ag == nil {
+					ag = tunCtrl.AesCipher
+				}
+
+				rand.Seed(time.Now().UnixNano())
+				rand64 = rand.Int63()
+				data, err = ag.Encrypt([]byte(strconv.FormatInt(rand64, 10)))
+				if err != nil {
+					logrus.WithFields(logrus.Fields{
+						"TuName": tuName,
+						"Error":  err,
+						"Step":   "0x01",
+					}).Errorln("Encrypt Failed.")
+					retInfo = "Encrypt Failed."
+					retBytes = []byte{0x01}
+					goto Error
+				}
+
+				retBytes = []byte{0x02}
+				retBytes = append(retBytes, data...)
+				dataChan <- retBytes
+			case 0x02:
+				if _, ok := cfgUtil.TunCtrlMap.Load(tuName); !ok {
+					retInfo = "Bad Request."
+					retBytes = []byte{0x10}
+					goto Error
+				}
+
+				data, err = ag.Decrypt(data[1:])
+				if err != nil {
+					logrus.WithFields(logrus.Fields{
+						"TuName": tuName,
+						"Error":  err,
+						"Step":   "0x02",
+					}).Errorln("Decrypt Failed.")
+					retInfo = "Invalid Password."
+					retBytes = []byte{0x02}
+					goto Error
+				}
+
+				token64, err := strconv.ParseInt(string(data), 10, 64)
+				if err != nil || token64 != rand64+1 {
+					cfgUtil.TunCtrlMap.Delete(tuName)
+					if err == nil {
+						err = errors.New("received wrong token64")
+					}
+					logrus.WithFields(logrus.Fields{
+						"TuName": tuName,
+						"Error":  err,
+						"Step":   "0x02",
+					}).Errorln("Token Verified Failed.")
+					retInfo = "Bad Token."
+					retBytes = []byte{0x02}
+					goto Error
+				}
+
+				logrus.WithFields(logrus.Fields{
+					"TuName": tuName,
+					"Step":   "0x02",
+				}).Debugln("Verification Completed.")
+
+				retBytes = []byte{0x03, 'o', 'k'}
+				dataChan <- retBytes
+			default:
+				retInfo = "Bad Request."
+				retBytes = []byte{0x10}
+				goto Error
+			}
+		}
+	}
+
+Error:
+	retBytes = append(retBytes, []byte(retInfo)...)
+	dataChan <- retBytes
+}
+
+func TokenInc(data []byte, clientCfg *cfgUtil.ClientCfg, ag *cipherUtil.AesGcm) ([]byte, error) {
+	var token64 int64
+	var err error
+
+	data, err = ag.Decrypt(data[1:])
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"TuName": clientCfg.TunnelName,
+			"Error":  err,
+			"Step":   "0x02",
+		}).Errorln("Decrypt Failed.")
+		return nil, err
+	}
+
+	token64, err = strconv.ParseInt(string(data), 10, 64)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"TuName": clientCfg.TunnelName,
+			"Error":  err,
+			"Step":   "0x02",
+		}).Errorln("ParseInt Failed.")
+		return nil, err
+	}
+
+	token64 += 1
+
+	data, err = ag.Encrypt([]byte(strconv.FormatInt(token64, 10)))
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"TuName": clientCfg.TunnelName,
+			"Error":  err,
+			"Step":   "0x02",
+		}).Errorln("Encrypt Failed.")
+		return nil, err
+	}
+
+	return append([]byte{0x02}, data...), err
+}
+
+func TcpVerify(conn *net.TCPConn, serverCfg *cfgUtil.ServerCfg) {
+	var tuName string
+	var data []byte
+	var dataChan chan []byte
+	var n int
+	var ctx context.Context
+	var cancelFunc context.CancelFunc
+	var ccfg *cfgUtil.ClientCfg
+	var tunInfo *cfgUtil.TunnelCfg
+	var iface *water.Interface
+	var err error
+
+	data = make([]byte, 65536)
+	n, err = protocolutil.TcpRead(*conn, data)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"Error": err,
-		}).Errorln("Auth failed.")
-		stream.Close()
-		return
-	}
-	tuName := string(buf[:n])
-	tunInfo := cfgUtil.TunExist(tuName, serverCfg)
-	if tunInfo == nil {
-		logrus.WithFields(logrus.Fields{
-			"TuName": tuName,
-			"Error":  err,
-		}).Errorln("Tunnel dosen't Exists.")
-		retInfo := []byte{'!', 'o', 'k'}
-		quicutil.WriteQUIC(stream, retInfo, len(retInfo))
-		stream.Close()
-		return
-	}
-	ag := &cipherUtil.AesGcm{}
-	err = ag.Init(tunInfo.Passwd)
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"TuName": tuName,
-			"Error":  err,
-		}).Errorln("Auth failed.")
-		retInfo := []byte{'!', 'o', 'k'}
-		quicutil.WriteQUIC(stream, retInfo, len(retInfo))
-		stream.Close()
-		return
-	}
-	n, err = quicutil.ReadQUIC(stream, buf)
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"TuName": tuName,
-			"Error":  err,
-		}).Errorln("Auth failed.")
-		retInfo := []byte{'!', 'o', 'k'}
-		quicutil.WriteQUIC(stream, retInfo, len(retInfo))
-		stream.Close()
-		return
-	}
-	stampDec, err := ag.Decrypt(buf[:n])
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"TuName": tuName,
-			"Error":  err,
-		}).Errorln("Auth failed.")
-		retInfo := []byte{'!', 'o', 'k'}
-		quicutil.WriteQUIC(stream, retInfo, len(retInfo))
-		stream.Close()
-		return
-	}
-	stamp, err := strconv.ParseInt(string(stampDec), 10, 64)
-	var localStamp, stampDiff int64
-	if err == nil {
-		localStamp = time.Now().UTC().Unix()
-		stampDiff = localStamp - stamp
-	}
-	if err != nil || !(stampDiff >= -5 && stampDiff <= 5) { //stampDiff should be less than 5 seconds
-		if err == nil {
-			err = fmt.Errorf("stampDiff is %ds, more than 5 seconds", stampDiff)
-		}
-		logrus.WithFields(logrus.Fields{
-			"TuName": tuName,
-			"Error":  err,
-		}).Errorln("Auth failed.")
-		retInfo := []byte{'!', 'o', 'k'}
-		quicutil.WriteQUIC(stream, retInfo, len(retInfo))
-		stream.Close()
-		return
-	}
-	cfgUtil.MutexQUIC.Lock()
-	value, ok := cfgUtil.TunStsMap.Load(tuName)
-	var tuSts *cfgUtil.TunnelSts
-	if !ok {
-		tuSts = &cfgUtil.TunnelSts{TunInfo: tunInfo, AesCipher: ag}
-		cfgUtil.TunStsMap.Store(tuName, tuSts)
-		cfgUtil.MutexQUIC.Unlock()
-
-		go func(stream quic.Stream, tuSts *cfgUtil.TunnelSts, tuName string) {
-			buf := make([]byte, 65536)
-			err := stream.SetReadDeadline(time.Now().Add(time.Second * time.Duration(serverCfg.QUIC.WaitTime)))
-			if err != nil {
-				cfgUtil.TunStsMap.Delete(tuName)
-				logrus.WithFields(logrus.Fields{
-					"TuName": tuName,
-					"Error":  err,
-				}).Errorln("Auth failed.")
-				return
-			}
-			_, err = quicutil.ReadQUIC(stream, buf) //wait for acknowledgement from client to start Tunnel
-			if err != nil {
-				cfgUtil.TunStsMap.Delete(tuName)
-				logrus.WithFields(logrus.Fields{
-					"TuName": tuName,
-					"Error":  err,
-				}).Errorln("Auth failed.")
-				return
-			}
-			tuSts.ActiveConn = int32(len(tuSts.QUICStream))
-			tuSts.Sts = "Step1"
-			logrus.WithFields(logrus.Fields{
-				"TuName": tuName,
-			}).Debugln("Connect Complete.")
-			err = QUICTUnnelStart(tuSts, serverCfg.QUIC.Timeout)
-			if err != nil {
-				cfgUtil.TunStsMap.Delete(tuName)
-			}
-		}(stream, tuSts, tuName)
-
-	} else {
-		cfgUtil.MutexQUIC.Unlock()
-		tuSts = value.(*cfgUtil.TunnelSts)
-		if tuSts.Sts == "Step1" {
-			retInfo := []byte{'!', 'o', 'k'}
-			quicutil.WriteQUIC(stream, retInfo, len(retInfo))
-			logrus.WithFields(logrus.Fields{
-				"TuName": tuName,
-			}).Errorln("Tunnel is in use.")
-			stream.Close()
-			return
-		}
-	}
-	retInfo := []byte{'o', 'k'}
-	err = quicutil.WriteQUIC(stream, retInfo, len(retInfo))
-	if err != nil {
-		logrus.WithFields(logrus.Fields{
-			"TuName": tuName,
-			"Error":  err,
-		}).Errorln("Auth failed.")
-		stream.Close()
-		return
+		}).Errorln("Tcp Communication Error.")
+		goto Error
 	}
 
-	tuSts.QUICStream = append(tuSts.QUICStream, stream)
+	ctx, cancelFunc = context.WithCancel(context.Background())
+	dataChan = make(chan []byte)
+	go Auth(ctx, dataChan, serverCfg)
+
+	tuName = string(data[1:n])
+	dataChan <- data[:n]
+	data = <-dataChan
+	err = protocolutil.TcpWrite(*conn, data, len(data))
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"TuName": tuName,
+			"Error":  err,
+		}).Errorln("Tcp Communication Error.")
+		goto Error
+	}
+	if len(data) < 1 || data[0] != 0x02 {
+		goto Error
+	}
+
+	data = make([]byte, 65536)
+	n, err = protocolutil.TcpRead(*conn, data)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"TuName": tuName,
+			"Error":  err,
+		}).Errorln("Tcp Communication Error.")
+		goto Error
+	}
+
+	dataChan <- data[:n]
+	data = <-dataChan
+	err = protocolutil.TcpWrite(*conn, data, len(data))
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"TuName": tuName,
+			"Error":  err,
+		}).Errorln("Tcp Communication Error.")
+		goto Error
+	}
+	if len(data) < 1 || data[0] != 0x03 {
+		goto Error
+	}
+
+	cancelFunc()
+	cancelFunc = nil
+	//Verification completed
+	tunInfo = cfgUtil.TunExist(tuName, serverCfg)
+	ccfg = &cfgUtil.ClientCfg{DeviceType: tunInfo.DeviceType, DeviceName: tunInfo.DeviceName, Network: tunInfo.Network}
+
+	iface, err = tunutil.NewTun(ccfg)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"TuName": tuName,
+			"Error":  err,
+		}).Errorln("Creating Tap/Tun Device Error.")
+		goto Error
+	}
+
+	go protocolutil.ReadTcpToTun(conn, iface, tuName)
+	go protocolutil.ReadTunToTcp(conn, iface, tuName, serverCfg.TCP.Timeout)
+
+	return
+Error:
+	if cancelFunc != nil {
+		cancelFunc()
+	}
+	conn.Close()
 }
 
-func AuthQUICClient(clientCfg *cfgUtil.ClientCfg) ([]quic.Stream, error) {
+func TcpClientVerify(clientCfg *cfgUtil.ClientCfg) {
+	addr := &net.TCPAddr{Port: clientCfg.TCP.Port, IP: net.ParseIP(clientCfg.TCP.Ip)}
+
+	ag := &cipherUtil.AesGcm{}
+	err := ag.Init(clientCfg.Passwd)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"TuName": clientCfg.TunnelName,
+			"Error":  err,
+		}).Errorln("Create AesCipher Failed.")
+		return
+	}
+
+	conn, err := net.DialTCP("tcp", nil, addr)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"TuName":      clientCfg.TunnelName,
+			"Server Addr": addr,
+			"Error":       err,
+		}).Errorln("Cann't connect to server.")
+		return
+	}
+
 	tunNameBuf := []byte(clientCfg.TunnelName)
+	data := append([]byte{0x01}, tunNameBuf...)
+	err = protocolutil.TcpWrite(*conn, data, len(data))
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"TuName": clientCfg.TunnelName,
+			"Error":  err,
+			"Step":   "0x01",
+		}).Errorln("Tcp Communication Error.")
+		conn.Close()
+		return
+	}
+
+	data = make([]byte, 65536)
+	n, err := protocolutil.TcpRead(*conn, data)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"TuName": clientCfg.TunnelName,
+			"Error":  err,
+			"Step":   "0x01",
+		}).Errorln("Tcp Communication Error.")
+		conn.Close()
+		return
+	}
+
+	if len(data) < 1 || data[0] != 0x02 {
+		logrus.WithFields(logrus.Fields{
+			"TuName": clientCfg.TunnelName,
+			"Error":  errors.New("bad response"),
+			"Step":   "0x01",
+		}).Errorln("Bad Response.")
+		conn.Close()
+		return
+	}
+
+	data, err = TokenInc(data[:n], clientCfg, ag)
+	if err != nil {
+		conn.Close()
+		return
+	}
+	err = protocolutil.TcpWrite(*conn, data, len(data))
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"TuName": clientCfg.TunnelName,
+			"Error":  err,
+			"Step":   "0x02",
+		}).Errorln("Tcp Communication Error.")
+		conn.Close()
+		return
+	}
+
+	data = make([]byte, 65536)
+	n, err = protocolutil.TcpRead(*conn, data)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"TuName": clientCfg.TunnelName,
+			"Error":  err,
+			"Step":   "0x02",
+		}).Errorln("Tcp Communication Error.")
+		conn.Close()
+		return
+	}
+
+	data = data[:n]
+	if len(data) < 1 {
+		err = errors.New("empty response")
+	} else if data[0] != 0x03 {
+		err = errors.New(string(data[1:]))
+	}
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"TuName": clientCfg.TunnelName,
+			"Error":  err,
+			"Step":   "0x02",
+		}).Errorln("Verification Failed.")
+		conn.Close()
+		return
+	}
+	//Verification completed
+	if clientCfg.TCP.KeepaLvie > 0 { //use tcp keepalive to keep tcp nat session
+		logrus.WithFields(logrus.Fields{
+			"Keepalive": clientCfg.TCP.KeepaLvie,
+		}).Debugln("Set Keepalive for Tcp Conn.")
+		err = protocolutil.SetTcpKeepalive(clientCfg.TCP.KeepaLvie, conn)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"Error": err,
+			}).Infoln("Set Keepavlive failed.")
+		}
+	}
+
+	iface, err := tunutil.NewTun(clientCfg)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"TuName": clientCfg.TunnelName,
+			"Error":  err,
+		}).Errorln("Creating Tap/Tun Device Error.")
+		conn.Close()
+		return
+	}
+
+	go protocolutil.ReadTcpToTunClient(conn, iface)
+	go protocolutil.ReadTunToTcpClient(conn, iface, clientCfg.TCP.Timeout)
+}
+
+func QUICVerify(stream quic.Stream, serverCfg *cfgUtil.ServerCfg) {
+	var tuName string
+	var data []byte
+	var dataChan chan []byte
+	var n int
+	var ctx context.Context
+	var cancelFunc context.CancelFunc
+	var ccfg *cfgUtil.ClientCfg
+	var tunInfo *cfgUtil.TunnelCfg
+	var iface *water.Interface
+	var timeout int
+	var err error
+
+	timeout = serverCfg.QUIC.Timeout
+	data = make([]byte, 65536)
+	n, err = quicutil.ReadQUIC(stream, data, timeout)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"Error": err,
+		}).Errorln("QUIC Communication Error.")
+		goto Error
+	}
+
+	ctx, cancelFunc = context.WithCancel(context.Background())
+	dataChan = make(chan []byte)
+	go Auth(ctx, dataChan, serverCfg)
+
+	tuName = string(data[1:n])
+	dataChan <- data[:n]
+	data = <-dataChan
+	err = quicutil.WriteQUIC(stream, data, len(data), timeout)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"TuName": tuName,
+			"Error":  err,
+		}).Errorln("QUIC Communication Error.")
+		goto Error
+	}
+	if len(data) < 1 || data[0] != 0x02 {
+		goto Error
+	}
+
+	data = make([]byte, 65536)
+	n, err = quicutil.ReadQUIC(stream, data, timeout)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"TuName": tuName,
+			"Error":  err,
+		}).Errorln("QUIC Communication Error.")
+		goto Error
+	}
+
+	dataChan <- data[:n]
+	data = <-dataChan
+	err = quicutil.WriteQUIC(stream, data, len(data), timeout)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"TuName": tuName,
+			"Error":  err,
+		}).Errorln("QUIC Communication Error.")
+		goto Error
+	}
+	if len(data) < 1 || data[0] != 0x03 {
+		goto Error
+	}
+
+	cancelFunc()
+	cancelFunc = nil
+	//Verification completed
+	tunInfo = cfgUtil.TunExist(tuName, serverCfg)
+	ccfg = &cfgUtil.ClientCfg{DeviceType: tunInfo.DeviceType, DeviceName: tunInfo.DeviceName, Network: tunInfo.Network}
+
+	iface, err = tunutil.NewTun(ccfg)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"TuName": tuName,
+			"Error":  err,
+		}).Errorln("Creating Tap/Tun Device Error.")
+		goto Error
+	}
+
+	go quicutil.ReadQUICToTun(stream, iface, tuName, timeout)
+	go quicutil.ReadTunToQUIC(stream, iface, tuName, timeout)
+
+	return
+Error:
+	if cancelFunc != nil {
+		cancelFunc()
+	}
+	stream.Close()
+}
+
+func QUICClientVerify(clientCfg *cfgUtil.ClientCfg) {
 	tlsConfig := &tls.Config{InsecureSkipVerify: clientCfg.QUIC.AllowInSecure, NextProtos: []string{"quic-tunproject"}}
 	addrStr := ""
-	streamSet := make([]quic.Stream, 0)
 	ag := &cipherUtil.AesGcm{}
-	buf := make([]byte, 65536)
+	timeout := clientCfg.QUIC.Timeout
 	qConfig := &quic.Config{KeepAlive: true, HandshakeIdleTimeout: time.Second * time.Duration(clientCfg.QUIC.ShakeTime), MaxIdleTimeout: time.Second * time.Duration(clientCfg.QUIC.IdleTime)}
 
 	if clientCfg.QUIC.QuicUrl != "" {
@@ -1159,85 +909,115 @@ func AuthQUICClient(clientCfg *cfgUtil.ClientCfg) ([]quic.Stream, error) {
 		logrus.WithFields(logrus.Fields{
 			"Error": err,
 		}).Errorln("Auth failed.")
-		return nil, err
+		return
 	}
 
-	for i := 0; i < clientCfg.MutilQueue; i++ {
-		conn, err := quic.DialAddr(addrStr, tlsConfig, qConfig)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"RemoteAddr": addrStr,
-				"Error":      err,
-			}).Errorln("Connect to RemoteAddr failed.")
-			return nil, err
-		}
-		stream, err := conn.OpenStreamSync(context.Background())
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"Error": err,
-			}).Errorln("QUIC Accept Stream failed.")
-			return nil, err
-		}
-
-		err = stream.SetWriteDeadline(time.Now().Add(time.Second * time.Duration(clientCfg.QUIC.Timeout)))
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"Error": err,
-			}).Errorln("Auth failed.")
-			return nil, err
-		}
-
-		err = quicutil.WriteQUIC(stream, tunNameBuf, len(tunNameBuf))
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"Error": err,
-			}).Errorln("Auth failed.")
-			return nil, err
-		}
-		stamp := time.Now().UTC().Unix()
-		stampEnc, err := ag.Encrypt([]byte(strconv.FormatInt(stamp, 10)))
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"Error": err,
-			}).Errorln("Auth failed.")
-			return nil, err
-		}
-
-		err = stream.SetWriteDeadline(time.Now().Add(time.Second * time.Duration(clientCfg.QUIC.Timeout)))
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"Error": err,
-			}).Errorln("Auth failed.")
-			return nil, err
-		}
-
-		err = quicutil.WriteQUIC(stream, stampEnc, len(stampEnc))
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"Error": err,
-			}).Errorln("Auth failed.")
-			return nil, err
-		}
-
-		err = stream.SetReadDeadline(time.Now().Add(time.Second * time.Duration(clientCfg.QUIC.Timeout)))
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"Error": err,
-			}).Errorln("Auth failed.")
-			return nil, err
-		}
-
-		n, err := quicutil.ReadQUIC(stream, buf)
-		if err != nil || string(buf[:n]) != "ok" {
-			if err == nil {
-				err = errors.New(string(buf[:n]))
-			}
-			logrus.WithFields(logrus.Fields{
-				"Error": err,
-			}).Errorln("Auth failed.")
-			return nil, err
-		}
-		streamSet = append(streamSet, stream)
+	conn, err := quic.DialAddr(addrStr, tlsConfig, qConfig)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"RemoteAddr": addrStr,
+			"Error":      err,
+		}).Errorln("Connect to RemoteAddr Failed.")
+		return
 	}
-	return streamSet, nil
+
+	stream, err := conn.OpenStreamSync(context.Background())
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"Error": err,
+		}).Errorln("QUIC Accept Stream failed.")
+		return
+	}
+
+	tunNameBuf := []byte(clientCfg.TunnelName)
+	data := append([]byte{0x01}, tunNameBuf...)
+	err = quicutil.WriteQUIC(stream, data, len(data), timeout)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"TuName": clientCfg.TunnelName,
+			"Error":  err,
+			"Step":   "0x01",
+		}).Errorln("QUIC Communication Error.")
+		stream.Close()
+		return
+	}
+
+	data = make([]byte, 65536)
+	n, err := quicutil.ReadQUIC(stream, data, timeout)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"TuName": clientCfg.TunnelName,
+			"Error":  err,
+			"Step":   "0x01",
+		}).Errorln("QUIC Communication Error.")
+		stream.Close()
+		return
+	}
+
+	if len(data) < 1 || data[0] != 0x02 {
+		logrus.WithFields(logrus.Fields{
+			"TuName": clientCfg.TunnelName,
+			"Error":  errors.New("bad response"),
+			"Step":   "0x01",
+		}).Errorln("Bad Response.")
+		stream.Close()
+		return
+	}
+
+	data, err = TokenInc(data[:n], clientCfg, ag)
+	if err != nil {
+		stream.Close()
+		return
+	}
+	err = quicutil.WriteQUIC(stream, data, len(data), timeout)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"TuName": clientCfg.TunnelName,
+			"Error":  err,
+			"Step":   "0x02",
+		}).Errorln("QUIC Communication Error.")
+		stream.Close()
+		return
+	}
+
+	data = make([]byte, 65536)
+	n, err = quicutil.ReadQUIC(stream, data, timeout)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"TuName": clientCfg.TunnelName,
+			"Error":  err,
+			"Step":   "0x02",
+		}).Errorln("QUIC Communication Error.")
+		stream.Close()
+		return
+	}
+
+	data = data[:n]
+	if len(data) < 1 {
+		err = errors.New("empty response")
+	} else if data[0] != 0x03 {
+		err = errors.New(string(data[1:]))
+	}
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"TuName": clientCfg.TunnelName,
+			"Error":  err,
+			"Step":   "0x02",
+		}).Errorln("Verification Failed.")
+		stream.Close()
+		return
+	}
+	//Verification completed
+	iface, err := tunutil.NewTun(clientCfg)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"TuName": clientCfg.TunnelName,
+			"Error":  err,
+		}).Errorln("Creating Tap/Tun Device Error.")
+		stream.Close()
+		return
+	}
+
+	go quicutil.ReadQUICToTunClient(stream, iface, timeout)
+	go quicutil.ReadTunToQUICClient(stream, iface, timeout)
 }

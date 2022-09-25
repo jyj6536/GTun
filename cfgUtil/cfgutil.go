@@ -3,34 +3,23 @@ package cfgUtil
 import (
 	"context"
 	"encoding/json"
-	"net"
 	"os"
 	"sync"
 	"time"
 	"tunproject/authUtil/cipherUtil"
 
-	"github.com/lucas-clemente/quic-go"
 	"github.com/sirupsen/logrus"
 	"github.com/songgao/water"
 )
 
-type TunnelSts struct {
-	TunInfo    *TunnelCfg
-	TokenInt   int64
-	Sts        string
-	TcpConn    []*net.TCPConn
-	QUICStream []quic.Stream
-	ActiveConn int32
-	AesCipher  *cipherUtil.AesGcm
+type TunCtrl struct {
+	TunInfo   *TunnelCfg
+	AesCipher *cipherUtil.AesGcm
+	TokenInt  int64  //used in icmp
+	Sts       string //used in icmp
 }
 
-type TunnelStsClient struct {
-	ActiveConn int32
-}
-
-var TunStsClient *TunnelStsClient = &TunnelStsClient{}
-
-var TunStsMap sync.Map //store global status of tunnels
+var TunCtrlMap sync.Map
 
 var IcmpTunStsCtrl sync.Map //store status of icmp tunnels(key+identifier,IcmpTunCtrl)
 
@@ -38,7 +27,7 @@ type IcmpTunCtrl struct {
 	Time       time.Time
 	CancelFunc context.CancelFunc
 	TuName     string
-	TuSts      *TunnelSts
+	TunCtrl    *TunCtrl
 	Iface      *water.Interface
 }
 
@@ -150,7 +139,6 @@ type QUICCfg struct {
 	KeyPath   string `json:"keyPath"`   //private key
 	ShakeTime int    `json:"shakeTime"` //ssl shakehand timeout(0 means default and default is 5s)
 	IdleTime  int    `json:"idleTime"`  //maximum duration that may pass without any incoming network activity(0 means default and default is  30s, the actual value for the idle timeout is the minimum of this value and the peer's)
-	WaitTime  int    `json:"waitTime"`  //maximum time to wait for tunnel establishment(recommended minimum is 50s)
 	Timeout   int    `json:"timeout"`   //timeout used in send or receive(recommended minimun is 5s)
 }
 

@@ -4,10 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"net"
-	"os"
 	"sync"
-	"sync/atomic"
-	"syscall"
 	"time"
 	"tunproject/cfgUtil"
 	icmputil "tunproject/protocolUtil/icmpUtil"
@@ -51,19 +48,6 @@ func ReadTcpToTun(conn *net.TCPConn, iface *water.Interface, tuName string) {
 	defer func() {
 		conn.Close()
 		iface.Close()
-		value, ok := cfgUtil.TunStsMap.Load(tuName)
-		if !ok {
-			return
-		}
-		tuSts := value.(*cfgUtil.TunnelSts)
-		atomic.AddInt32(&tuSts.ActiveConn, -1)
-		if atomic.LoadInt32(&tuSts.ActiveConn) == 0 {
-			//tunutil.DelTun(tuSts.TunInfo.DeviceName) device will be removed after all of ifaces were closed
-			cfgUtil.TunStsMap.Delete(tuName)
-			logrus.WithFields(logrus.Fields{
-				"Tuname": tuName,
-			}).Debugln("Tunnel Finished.")
-		}
 	}()
 
 	buf := make([]byte, 65536)
@@ -121,11 +105,6 @@ func ReadTcpToTunClient(conn *net.TCPConn, iface *water.Interface) {
 	defer func() {
 		conn.Close()
 		iface.Close()
-		atomic.AddInt32(&cfgUtil.TunStsClient.ActiveConn, -1)
-		if cfgUtil.TunStsClient.ActiveConn == 0 {
-			logrus.Debugln("Tunnel Finished.")
-			syscall.Kill(os.Getpid(), syscall.SIGINT)
-		}
 	}()
 
 	buf := make([]byte, 65536)
@@ -195,7 +174,7 @@ func ReadIcmpToTun(conn *net.IPConn, iface *water.Interface) {
 	}
 }
 
-func ReadTunToIcmp(conn *net.IPConn, iface *water.Interface, icmp *icmputil.ICMP, keepalive int) {
+func  ReadTunToIcmp(conn *net.IPConn, iface *water.Interface, icmp *icmputil.ICMP, keepalive int) {
 	buf := make([]byte, 65536)
 
 	mutex := sync.Mutex{}

@@ -19,7 +19,6 @@
         "keyPath":"/root/.acme.sh/cloudspace.cyou/cloudspace.cyou.key",
         "shakeTime":5,
         "idleTime":30,
-        "waitTime":50,
         "timeout":5
     },
     "tunnels":[

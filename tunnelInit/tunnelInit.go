@@ -23,43 +23,21 @@ import (
 func ClientInit(clientCfg *cfgUtil.ClientCfg) error {
 	logrus.Debugln("Start Initializing Client.")
 
-	if clientCfg.Protocol == "icmp" {
-		clientCfg.MutilQueue = 1
-	}
-
-	ifaceSet, err := tunutil.NewTun(clientCfg)
-	if err != nil {
-		return err
-	}
-
 	if clientCfg.Protocol == "tcp" {
-		connSet, err := authutil.AuthClient(clientCfg)
+		go verify(authutil.TcpClientVerify, clientCfg)
+	} else if clientCfg.Protocol == "icmp" {
+		conn, icmp, err := authutil.IcmpClientVerify(clientCfg)
 		if err != nil {
 			return err
 		}
-		if clientCfg.TCP.KeepaLvie > 0 { //use tcp keepalive to keep tcp nat session
-			logrus.WithFields(logrus.Fields{
-				"Keepalive": clientCfg.TCP.KeepaLvie,
-			}).Debugln("Set keepalive for tcp conn.")
-			for _, conn := range connSet {
-				err = protocolutil.SetTcpKeepalive(clientCfg.TCP.KeepaLvie, conn)
-				if err != nil {
-					logrus.WithFields(logrus.Fields{
-						"Error": err,
-					}).Infoln("Set Keepavlive failed.")
-				}
-			}
-		}
 
-		cfgUtil.TunStsClient.ActiveConn = int32(len(connSet))
-
-		for i := 0; i < int(cfgUtil.TunStsClient.ActiveConn); i++ {
-			go protocolutil.ReadTunToTcpClient(connSet[i], ifaceSet[i],clientCfg.TCP.Timeout)
-			go protocolutil.ReadTcpToTunClient(connSet[i], ifaceSet[i])
-		}
-	} else if clientCfg.Protocol == "icmp" {
-		conn, icmp, err := authutil.AuthlClientIcmp(clientCfg)
+		iface, err := tunutil.NewTun(clientCfg)
 		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"TuName": clientCfg.TunnelName,
+				"Error":  err,
+			}).Errorln("Creating Tap/Tun Device Error.")
+			conn.Close()
 			return err
 		}
 
@@ -78,36 +56,15 @@ func ClientInit(clientCfg *cfgUtil.ClientCfg) error {
 			}
 		}()
 
-		go protocolutil.ReadIcmpToTun(conn, ifaceSet[0])
-		go protocolutil.ReadTunToIcmp(conn, ifaceSet[0], icmp, clientCfg.ICMP.Keepalvie)
+		go protocolutil.ReadIcmpToTun(conn, iface)
+		go protocolutil.ReadTunToIcmp(conn, iface, icmp, clientCfg.ICMP.Keepalvie)
 	} else if clientCfg.Protocol == "quic" {
-		streamSet, err := authutil.AuthQUICClient(clientCfg)
-		if err != nil {
-			return err
-		}
-
-		err = streamSet[0].SetReadDeadline(time.Now().Add(time.Second * time.Duration(clientCfg.QUIC.Timeout)))
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"Error": err,
-			}).Errorln("Set ReadDeadline failed.")
-			return err
-		}
-
-		err = quicutil.WriteQUIC(streamSet[0], []byte{0x00}, 1)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"Error": err,
-			}).Errorln("Write To Server failed.")
-			return err
-		}
-
-		cfgUtil.TunStsClient.ActiveConn = int32(len(streamSet))
-
-		for i := 0; i < len(streamSet); i++ {
-			go quicutil.ReadTunToQUICClient(streamSet[i], ifaceSet[i], clientCfg.QUIC.Timeout)
-			go quicutil.ReadQUICToTunClient(streamSet[i], ifaceSet[i], clientCfg.QUIC.Timeout)
-		}
+		go verify(authutil.QUICClientVerify, clientCfg)
+	} else {
+		logrus.WithFields(logrus.Fields{
+			"Protocol": clientCfg.Protocol,
+		}).Errorln("Unknown Protocol.")
+		return nil
 	}
 
 	sigs := make(chan os.Signal)
@@ -124,8 +81,30 @@ func ClientInit(clientCfg *cfgUtil.ClientCfg) error {
 	<-done
 
 	logrus.Debugln("Process Exited.")
+	return nil
+}
 
-	return err
+func verify(f func(*cfgUtil.ClientCfg), clientCfg *cfgUtil.ClientCfg) {
+	for i := 0; i < clientCfg.MutilQueue; i++ {
+		f(clientCfg)
+	}
+
+	ticker := time.NewTicker(time.Second * time.Duration(10))
+	failureCnt := 0
+	for range ticker.C {
+		if tunutil.TunExist(clientCfg.DeviceName) {
+			logrus.Debugln("Tun/Tap Device Exists.")
+		} else {
+			logrus.Debugln("Tun/Tap Device dosen't Exist.")
+			failureCnt++
+			logrus.WithFields(logrus.Fields{
+				"failureCnt": failureCnt,
+			}).Debugln("Start Verifying.")
+			for i := 0; i < clientCfg.MutilQueue; i++ {
+				f(clientCfg)
+			}
+		}
+	}
 }
 
 func ServerInit(serverCfg *cfgUtil.ServerCfg) error {
@@ -183,10 +162,10 @@ func serverTcpListen(serverCfg *cfgUtil.ServerCfg) error {
 			if err != nil {
 				logrus.WithFields(logrus.Fields{
 					"Error": err,
-				}).Errorln("Tcp Accept failed.")
+				}).Errorln("Tcp Accept Failed.")
 				continue
 			}
-			go authutil.Auth(conn, serverCfg)
+			go authutil.TcpVerify(conn, serverCfg)
 		}
 	}(connServer)
 	return err
@@ -217,7 +196,7 @@ func serverIcmpListen(scfg *cfgUtil.ServerCfg) error {
 					}
 					v.Iface.Close()
 					tuName := v.TuName
-					cfgUtil.TunStsMap.Delete(tuName)
+					cfgUtil.TunCtrlMap.Delete(tuName)
 					logrus.WithFields(logrus.Fields{
 						"TuName": tuName,
 					}).Debugln("Tunnel Finished.")
@@ -254,7 +233,7 @@ func serverIcmpListen(scfg *cfgUtil.ServerCfg) error {
 			}
 			switch icmp.Data[0] {
 			case 0x01, 0x02:
-				authutil.AuthIcmp(icmp, addr, scfg)
+				authutil.IcmpVerify(icmp, addr, scfg)
 			case 0x03:
 				key := addr.String() + "+" + strconv.FormatUint(uint64(icmp.Identifier), 10)
 				//value, ok := cfgUtil.IcmpIface.Load(key)
@@ -294,7 +273,7 @@ func serverQUICListen(scfg *cfgUtil.ServerCfg) error {
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"Error": err,
-		}).Errorln("Generate TLS Config failed.")
+		}).Errorln("Generate TLS Config Failed.")
 		return err
 	}
 	addr := net.UDPAddr{IP: net.ParseIP(scfg.QUIC.IP), Port: scfg.QUIC.Port}
@@ -303,7 +282,7 @@ func serverQUICListen(scfg *cfgUtil.ServerCfg) error {
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"Error": err,
-		}).Errorln("QUIC Listen failed.")
+		}).Errorln("QUIC Listen Failed.")
 		return err
 	}
 
@@ -313,17 +292,17 @@ func serverQUICListen(scfg *cfgUtil.ServerCfg) error {
 			if err != nil {
 				logrus.WithFields(logrus.Fields{
 					"Error": err,
-				}).Errorln("QUIC Accept failed.")
+				}).Errorln("QUIC Accept Failed.")
 				continue
 			}
 			stream, err := conn.AcceptStream(context.Background())
 			if err != nil {
 				logrus.WithFields(logrus.Fields{
 					"Error": err,
-				}).Errorln("QUIC Accept Stream failed.")
+				}).Errorln("QUIC Accept Stream Failed.")
 				continue
 			}
-			go authutil.AuthQUIC(stream, scfg)
+			go authutil.QUICVerify(stream, scfg)
 		}
 	}(listener)
 	return err
