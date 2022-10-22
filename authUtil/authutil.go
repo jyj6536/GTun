@@ -118,7 +118,7 @@ func IcmpVerify(icmp *icmputil.ICMP, addr net.Addr, serverCfg *cfgUtil.ServerCfg
 				logrus.WithFields(logrus.Fields{
 					"TuName": tuName,
 					"Error":  err,
-					"Step":   "Step1",
+					"Step":   "0x01",
 				}).Errorln("Step1 Failed.")
 				retIcmp := icmp.Create(icmputil.Reply, icmp.Code, icmp.Identifier, icmp.SeqNum, []byte{0x01, '!', 'o', 'k'})
 				icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
@@ -153,6 +153,11 @@ func IcmpVerify(icmp *icmputil.ICMP, addr net.Addr, serverCfg *cfgUtil.ServerCfg
 		key := addr.String() + "+" + strconv.FormatUint(uint64(icmp.Identifier), 10)
 		value, ok := cfgUtil.IcmpTunStsCtrl.Load(key)
 		if !ok {
+			logrus.WithFields(logrus.Fields{
+				"Key":   key,
+				"Error": errors.New("invalid key"),
+				"Step":  "0x02",
+			}).Errorln("Step2 Failed.")
 			retIcmp := icmp.Create(icmputil.Reply, icmp.Code, icmp.Identifier, icmp.SeqNum, []byte{0x02, '!', 'o', 'k'})
 			icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
 			return
@@ -168,7 +173,7 @@ func IcmpVerify(icmp *icmputil.ICMP, addr net.Addr, serverCfg *cfgUtil.ServerCfg
 				logrus.WithFields(logrus.Fields{
 					"TuName": tuName,
 					"Error":  err,
-					"Step":   "Step2",
+					"Step":   "0x02",
 				}).Errorln("Step2 Failed.")
 				retIcmp := icmp.Create(icmputil.Reply, icmp.Code, icmp.Identifier, icmp.SeqNum, []byte{0x02, '!', 'o', 'k'})
 				icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
@@ -414,7 +419,6 @@ func Auth(ctx context.Context, dataChan chan []byte, serverCfg *cfgUtil.ServerCf
 	var retBytes []byte
 	var tunInfo *cfgUtil.TunnelCfg
 	var ag *cipherUtil.AesGcm
-	var tunCtrl *cfgUtil.TunCtrl
 	var rand64 int64
 	var err error
 	for {
@@ -444,29 +448,17 @@ func Auth(ctx context.Context, dataChan chan []byte, serverCfg *cfgUtil.ServerCf
 					goto Error
 				}
 
-				value, ok := cfgUtil.TunCtrlMap.Load(tuName)
-				if !ok {
-					ag = &cipherUtil.AesGcm{}
-					err = ag.Init(tunInfo.Passwd)
-					if err != nil {
-						logrus.WithFields(logrus.Fields{
-							"TuName": tuName,
-							"Error":  err,
-							"Step":   "0x01",
-						}).Errorln("Cipher Init Failed.")
-						retInfo = "Cipher Init Failed."
-						retBytes = []byte{0x01}
-						goto Error
-					}
-
-					tunCtrl = &cfgUtil.TunCtrl{TunInfo: tunInfo, AesCipher: ag}
-					cfgUtil.TunCtrlMap.Store(tuName, tunCtrl)
-				} else {
-					tunCtrl = value.(*cfgUtil.TunCtrl)
-				}
-
-				if ag == nil {
-					ag = tunCtrl.AesCipher
+				ag = &cipherUtil.AesGcm{}
+				err = ag.Init(tunInfo.Passwd)
+				if err != nil {
+					logrus.WithFields(logrus.Fields{
+						"TuName": tuName,
+						"Error":  err,
+						"Step":   "0x01",
+					}).Errorln("Cipher Init Failed.")
+					retInfo = "Cipher Init Failed."
+					retBytes = []byte{0x01}
+					goto Error
 				}
 
 				rand.Seed(time.Now().UnixNano())
@@ -487,7 +479,7 @@ func Auth(ctx context.Context, dataChan chan []byte, serverCfg *cfgUtil.ServerCf
 				retBytes = append(retBytes, data...)
 				dataChan <- retBytes
 			case 0x02:
-				if _, ok := cfgUtil.TunCtrlMap.Load(tuName); !ok {
+				if tuName == "" { //we should send 0x01 firstly
 					retInfo = "Bad Request."
 					retBytes = []byte{0x10}
 					goto Error
@@ -507,7 +499,7 @@ func Auth(ctx context.Context, dataChan chan []byte, serverCfg *cfgUtil.ServerCf
 
 				token64, err := strconv.ParseInt(string(data), 10, 64)
 				if err != nil || token64 != rand64+1 {
-					cfgUtil.TunCtrlMap.Delete(tuName)
+					//cfgUtil.TunCtrlMap.Delete(tuName)
 					if err == nil {
 						err = errors.New("received wrong token64")
 					}

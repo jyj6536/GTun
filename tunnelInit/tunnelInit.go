@@ -190,7 +190,7 @@ func serverIcmpListen(scfg *cfgUtil.ServerCfg) error {
 		for range ticker.C { //scan periodicity per minute
 			cfgUtil.IcmpTunStsCtrl.Range(func(key, value interface{}) bool {
 				v := value.(*cfgUtil.IcmpTunCtrl)
-				if time.Since(v.Time) > time.Minute { //no packet transfering in one minute
+				if time.Since(v.Time) > time.Duration(scfg.ICMP.BreakTime)*time.Second { //no packet transfering in breaktime
 					if v.CancelFunc != nil {
 						v.CancelFunc()
 					}
