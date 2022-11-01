@@ -28,11 +28,7 @@ func ReadTunToTcp(conn *net.TCPConn, iface *water.Interface, tuName string, time
 			goto Stop
 		}
 
-		err = conn.SetWriteDeadline(time.Now().Add(time.Second * time.Duration(timeout)))
-		if err != nil {
-			goto Stop
-		}
-		err = TcpWrite(*conn, buf, n)
+		err = TcpWrite(*conn, buf, n, timeout)
 		if err != nil {
 			goto Stop
 		}
@@ -54,7 +50,7 @@ func ReadTcpToTun(conn *net.TCPConn, iface *water.Interface, tuName string) {
 	var err error
 	var n int
 	for {
-		n, err = TcpRead(*conn, buf)
+		n, err = TcpRead(*conn, buf, 0)
 		if err != nil {
 			goto Stop
 		}
@@ -86,11 +82,7 @@ func ReadTunToTcpClient(conn *net.TCPConn, iface *water.Interface, timeout int) 
 			goto Stop
 		}
 
-		err = conn.SetWriteDeadline(time.Now().Add(time.Second * time.Duration(timeout)))
-		if err != nil {
-			goto Stop
-		}
-		err = TcpWrite(*conn, buf, n)
+		err = TcpWrite(*conn, buf, n, timeout)
 		if err != nil {
 			goto Stop
 		}
@@ -111,7 +103,7 @@ func ReadTcpToTunClient(conn *net.TCPConn, iface *water.Interface) {
 	var err error
 	var n int
 	for {
-		n, err = TcpRead(*conn, buf)
+		n, err = TcpRead(*conn, buf, 0)
 		if err != nil {
 			goto Stop
 		}
@@ -174,7 +166,7 @@ func ReadIcmpToTun(conn *net.IPConn, iface *water.Interface) {
 	}
 }
 
-func  ReadTunToIcmp(conn *net.IPConn, iface *water.Interface, icmp *icmputil.ICMP, keepalive int) {
+func ReadTunToIcmp(conn *net.IPConn, iface *water.Interface, icmp *icmputil.ICMP, keepalive int) {
 	buf := make([]byte, 65536)
 
 	mutex := sync.Mutex{}
@@ -216,11 +208,17 @@ func  ReadTunToIcmp(conn *net.IPConn, iface *water.Interface, icmp *icmputil.ICM
 	}
 }
 
-func TcpRead(conn net.TCPConn, data []byte) (int, error) {
+func TcpRead(conn net.TCPConn, data []byte, timeout int) (int, error) {
 	dataLen := make([]byte, 4)
 	len := 4
 	currLen := 0
 	for currLen < len {
+		if timeout > 0 {
+			err := conn.SetReadDeadline(time.Now().Add(time.Second * time.Duration(timeout)))
+			if err != nil {
+				return 0, err
+			}
+		}
 		n, err := conn.Read(dataLen[currLen:4])
 		if err != nil {
 			return 0, err
@@ -230,21 +228,41 @@ func TcpRead(conn net.TCPConn, data []byte) (int, error) {
 	len = int(binary.LittleEndian.Uint32(dataLen))
 	currLen = 0
 	for currLen < len {
+		if timeout > 0 {
+			err := conn.SetReadDeadline(time.Now().Add(time.Second * time.Duration(timeout)))
+			if err != nil {
+				return 0, err
+			}
+		}
 		n, err := conn.Read(data[currLen:len])
 		if err != nil {
 			return 0, err
 		}
 		currLen += n
 	}
+
+	//reset readdeadline for tcp conn
+	if timeout > 0 {
+		err := conn.SetReadDeadline(time.Time{})
+		if err != nil {
+			return 0, nil
+		}
+	}
 	return len, nil
 }
 
-func TcpWrite(conn net.TCPConn, data []byte, dataLen int) error {
+func TcpWrite(conn net.TCPConn, data []byte, dataLen int, timeout int) error {
 	lenBuf := make([]byte, 4)
 	binary.LittleEndian.PutUint32(lenBuf, uint32(dataLen))
 	len := 4
 	currLen := 0
 	for currLen < len {
+		if timeout > 0 {
+			err := conn.SetWriteDeadline(time.Now().Add(time.Second * time.Duration(timeout)))
+			if err != nil {
+				return err
+			}
+		}
 		n, err := conn.Write(lenBuf[currLen:])
 		if err != nil {
 			return err
@@ -254,11 +272,25 @@ func TcpWrite(conn net.TCPConn, data []byte, dataLen int) error {
 	len = dataLen
 	currLen = 0
 	for currLen < len {
+		if timeout > 0 {
+			err := conn.SetWriteDeadline(time.Now().Add(time.Second * time.Duration(timeout)))
+			if err != nil {
+				return err
+			}
+		}
 		n, err := conn.Write(data[currLen:len])
 		if err != nil {
 			return err
 		}
 		currLen += n
+	}
+
+	//reset writedeadline for tcp conn
+	if timeout > 0 {
+		err := conn.SetWriteDeadline(time.Time{})
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

@@ -1,14 +1,14 @@
 {
     "type":"client", 
-    "protocol":"icmp",
+    "protocol":"tcp",
     "tcp":{
-        "ip":"104.224.178.14",
+        "ip":"192.168.56.2",
         "port":4567,
         "keepalive":5,
         "timeout":5
     },
     "icmp":{
-        "ip":"104.224.178.14",
+        "ip":"192.168.56.2",
         "identifier":4567,
         "timeout":5,
         "keepalive":5,
@@ -16,7 +16,7 @@
         "breakTime":60
     },
     "quic":{
-        "ip":"104.224.178.14",
+        "ip":"192.168.56.2",
         "quicUrl":"",
         "port":4567,
         "allowInSecure":true,
@@ -27,8 +27,7 @@
     "tunnelName":"tunnel1",
     "passwd":"12345@",
     "deviceType":"tap",
-    "deviceName":"tun1",
-    "keepalive":5,
+    "deviceName":"tun-test",
     "mutilQueue":2,
-    "network":"10.0.0.2/24"
+    "network":"10.0.1.2/24"
 }

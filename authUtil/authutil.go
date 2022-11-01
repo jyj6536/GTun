@@ -87,7 +87,7 @@ func IcmpVerify(icmp *icmputil.ICMP, addr net.Addr, serverCfg *cfgUtil.ServerCfg
 		value, ok := cfgUtil.TunCtrlMap.Load(tuName)
 		if ok {
 			tunCtrl := value.(*cfgUtil.TunCtrl)
-			if tunCtrl.TokenInt != 0 && tunCtrl.Sts == "0x01" {
+			if tunCtrl.Sts == "0x01" {
 				intEnc, err := tunCtrl.AesCipher.Encrypt([]byte(strconv.FormatInt(tunCtrl.TokenInt, 10)))
 				if err != nil {
 					logrus.WithFields(logrus.Fields{
@@ -104,6 +104,11 @@ func IcmpVerify(icmp *icmputil.ICMP, addr net.Addr, serverCfg *cfgUtil.ServerCfg
 				icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
 				return
 			} else {
+				logrus.WithFields(logrus.Fields{
+					"TuName": tuName,
+					"Error":  errors.New("invalid Sts : " + tunCtrl.Sts),
+					"Step":   "0x01",
+				}).Errorln("Step1 Failed.")
 				retIcmp := icmp.Create(icmputil.Reply, icmp.Code, icmp.Identifier, icmp.SeqNum, []byte{0x01, '!', 'o', 'k'})
 				icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
 				return
@@ -111,6 +116,9 @@ func IcmpVerify(icmp *icmputil.ICMP, addr net.Addr, serverCfg *cfgUtil.ServerCfg
 		} else {
 			rand.Seed(time.Now().UnixNano())
 			rand64 := rand.Int63()
+			if rand64 == 0 {
+				rand64 = 1
+			}
 
 			ag := &cipherUtil.AesGcm{}
 			err := ag.Init(tunInfo.Passwd)
@@ -182,6 +190,14 @@ func IcmpVerify(icmp *icmputil.ICMP, addr net.Addr, serverCfg *cfgUtil.ServerCfg
 
 			rand64, err := strconv.ParseInt(string(intDec), 10, 64)
 			if err != nil || rand64 != tunCtrl.TokenInt+1 {
+				if rand64 != tunCtrl.TokenInt+1 {
+					err = errors.New("bad token")
+				}
+				logrus.WithFields(logrus.Fields{
+					"TuName": tuName,
+					"Error":  err,
+					"Step":   "0x02",
+				}).Errorln("Step2 Failed.")
 				retIcmp := icmp.Create(icmputil.Reply, icmp.Code, icmp.Identifier, icmp.SeqNum, []byte{0x02, '!', 'o', 'k'})
 				icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
 				return
@@ -189,6 +205,11 @@ func IcmpVerify(icmp *icmputil.ICMP, addr net.Addr, serverCfg *cfgUtil.ServerCfg
 		}
 		err := IcmpTunnelStart(tunCtrl, icmp, addr, key)
 		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"TuName": tuName,
+				"Error":  err,
+				"Step":   "0x02",
+			}).Errorln("Step2 Failed.")
 			retIcmp := icmp.Create(icmputil.Reply, icmp.Code, icmp.Identifier, icmp.SeqNum, []byte{0x02, '!', 'o', 'k'})
 			icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
 			return
@@ -585,7 +606,7 @@ func TcpVerify(conn *net.TCPConn, serverCfg *cfgUtil.ServerCfg) {
 	var err error
 
 	data = make([]byte, 65536)
-	n, err = protocolutil.TcpRead(*conn, data)
+	n, err = protocolutil.TcpRead(*conn, data, serverCfg.TCP.Timeout)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"Error": err,
@@ -600,7 +621,7 @@ func TcpVerify(conn *net.TCPConn, serverCfg *cfgUtil.ServerCfg) {
 	tuName = string(data[1:n])
 	dataChan <- data[:n]
 	data = <-dataChan
-	err = protocolutil.TcpWrite(*conn, data, len(data))
+	err = protocolutil.TcpWrite(*conn, data, len(data), serverCfg.TCP.Timeout)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"TuName": tuName,
@@ -613,7 +634,7 @@ func TcpVerify(conn *net.TCPConn, serverCfg *cfgUtil.ServerCfg) {
 	}
 
 	data = make([]byte, 65536)
-	n, err = protocolutil.TcpRead(*conn, data)
+	n, err = protocolutil.TcpRead(*conn, data, serverCfg.TCP.Timeout)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"TuName": tuName,
@@ -624,7 +645,7 @@ func TcpVerify(conn *net.TCPConn, serverCfg *cfgUtil.ServerCfg) {
 
 	dataChan <- data[:n]
 	data = <-dataChan
-	err = protocolutil.TcpWrite(*conn, data, len(data))
+	err = protocolutil.TcpWrite(*conn, data, len(data), serverCfg.TCP.Timeout)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"TuName": tuName,
@@ -687,7 +708,7 @@ func TcpClientVerify(clientCfg *cfgUtil.ClientCfg) {
 
 	tunNameBuf := []byte(clientCfg.TunnelName)
 	data := append([]byte{0x01}, tunNameBuf...)
-	err = protocolutil.TcpWrite(*conn, data, len(data))
+	err = protocolutil.TcpWrite(*conn, data, len(data), clientCfg.TCP.Timeout)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"TuName": clientCfg.TunnelName,
@@ -699,7 +720,7 @@ func TcpClientVerify(clientCfg *cfgUtil.ClientCfg) {
 	}
 
 	data = make([]byte, 65536)
-	n, err := protocolutil.TcpRead(*conn, data)
+	n, err := protocolutil.TcpRead(*conn, data, clientCfg.TCP.Timeout)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"TuName": clientCfg.TunnelName,
@@ -725,7 +746,7 @@ func TcpClientVerify(clientCfg *cfgUtil.ClientCfg) {
 		conn.Close()
 		return
 	}
-	err = protocolutil.TcpWrite(*conn, data, len(data))
+	err = protocolutil.TcpWrite(*conn, data, len(data), clientCfg.TCP.Timeout)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"TuName": clientCfg.TunnelName,
@@ -737,7 +758,7 @@ func TcpClientVerify(clientCfg *cfgUtil.ClientCfg) {
 	}
 
 	data = make([]byte, 65536)
-	n, err = protocolutil.TcpRead(*conn, data)
+	n, err = protocolutil.TcpRead(*conn, data, clientCfg.TCP.Timeout)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"TuName": clientCfg.TunnelName,
