@@ -48,6 +48,14 @@ func ReadQUIC(stream quic.Stream, data []byte, timeout int) (int, error) {
 		}
 		currLen += n
 	}
+
+	//reset readdeadline for quic stream
+	if timeout > 0 {
+		err := stream.SetReadDeadline(time.Time{})
+		if err != nil {
+			return 0, err
+		}
+	}
 	return len, nil
 }
 
@@ -83,6 +91,14 @@ func WriteQUIC(stream quic.Stream, data []byte, dataLen int, timeout int) error 
 			return err
 		}
 		currLen += n
+	}
+
+	//reset writedeadline for quic stream
+	if timeout > 0 {
+		err := stream.SetWriteDeadline(time.Time{})
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

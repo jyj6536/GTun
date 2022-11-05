@@ -785,11 +785,11 @@ func TcpClientVerify(clientCfg *cfgUtil.ClientCfg) {
 		return
 	}
 	//Verification completed
-	if clientCfg.TCP.KeepaLvie > 0 { //use tcp keepalive to keep tcp nat session
+	if clientCfg.TCP.Keepalive > 0 { //use tcp keepalive to keep tcp nat session
 		logrus.WithFields(logrus.Fields{
-			"Keepalive": clientCfg.TCP.KeepaLvie,
+			"Keepalive": clientCfg.TCP.Keepalive,
 		}).Debugln("Set Keepalive for Tcp Conn.")
-		err = protocolutil.SetTcpKeepalive(clientCfg.TCP.KeepaLvie, conn)
+		err = protocolutil.SetTcpKeepalive(clientCfg.TCP.Keepalive, conn)
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
 				"Error": err,

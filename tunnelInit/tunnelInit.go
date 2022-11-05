@@ -57,7 +57,7 @@ func ClientInit(clientCfg *cfgUtil.ClientCfg) error {
 		}()
 
 		go protocolutil.ReadIcmpToTun(conn, iface)
-		go protocolutil.ReadTunToIcmp(conn, iface, icmp, clientCfg.ICMP.Keepalvie)
+		go protocolutil.ReadTunToIcmp(conn, iface, icmp, clientCfg.ICMP.Keepalive)
 	} else if clientCfg.Protocol == "quic" {
 		go verify(authutil.QUICClientVerify, clientCfg)
 	} else {
@@ -92,9 +92,7 @@ func verify(f func(*cfgUtil.ClientCfg), clientCfg *cfgUtil.ClientCfg) {
 	ticker := time.NewTicker(time.Second * time.Duration(10))
 	failureCnt := 0
 	for range ticker.C {
-		if tunutil.TunExist(clientCfg.DeviceName) {
-			logrus.Debugln("Tun/Tap Device Exists.")
-		} else {
+		if !tunutil.TunExist(clientCfg.DeviceName) {
 			logrus.Debugln("Tun/Tap Device dosen't Exist.")
 			failureCnt++
 			logrus.WithFields(logrus.Fields{

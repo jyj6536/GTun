@@ -31,12 +31,10 @@ type IcmpTunCtrl struct {
 	Iface      *water.Interface
 }
 
-var MutexQUIC sync.Mutex //this is used in AuthQUIC
-
 type Tcp struct {
 	Ip        string `json:"ip"`
 	Port      int    `json:"port"`
-	KeepaLvie int    `json:"keepalive"` //set keepalive_probes(count of keepalive probe packets) and keepalive_time(idle time before starting keepalive, 0 means that don't use keepalive)
+	Keepalive int    `json:"keepalive"` //set keepalive_probes(count of keepalive probe packets) and keepalive_time(idle time before starting keepalive, 0 means that don't use keepalive)
 	Timeout   int    `json:"timeout"`   //timeout used in send(recommended minimum is 5s)
 }
 
@@ -44,7 +42,7 @@ type Icmp struct {
 	Ip         string `json:"ip"`
 	Identifier int    `json:"identifier"`
 	Timeout    int    `json:"timeout"`    //timeout used in connecting(recommended minimum is 5s)
-	Keepalvie  int    `json:"keepalive"`  //interval between two probe packets(0 means default and default is 1s, should be less than breakTime)
+	Keepalive  int    `json:"keepalive"`  //interval between two probe packets(0 means default and default is 1s, should be less than breakTime)
 	RetryTimes int    `json:"retryTimes"` //when connecting to server, how many times client will retry if connecting times out(minimum is 1)
 	BreakTime  int    `json:"breakTime"`  //how long it will take before client abandons the tunnel when it don't receive any packet from the server(recommended minimum is 20s)
 }
@@ -92,8 +90,8 @@ func LoadClientCfg(path string) (*ClientCfg, error) {
 		return nil, err
 	}
 
-	if clientCfg.ICMP.Keepalvie == 0 {
-		clientCfg.ICMP.Keepalvie = 1
+	if clientCfg.ICMP.Keepalive == 0 {
+		clientCfg.ICMP.Keepalive = 1
 	}
 
 	logrus.WithFields(logrus.Fields{
