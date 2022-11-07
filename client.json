@@ -25,9 +25,9 @@
         "timeout":5
     },
     "tunnelName":"tunnel1",
-    "passwd":"12345@",
+    "passwd":"aaaaa",
     "deviceType":"tap",
-    "deviceName":"tun-test",
+    "deviceName":"tun1",
     "mutilQueue":2,
-    "network":"10.0.1.2/24"
+    "network":"10.0.0.2/24"
 }
