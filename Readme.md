@@ -89,3 +89,8 @@
 
 ~~~
 
+# System Variables
+
+For ICMP server, we need set `net.ipv4.icmp_echo_ignore_all=1`.
+
+for QUIC server and client, we need set `net.core.rmem_max=2500000`.
