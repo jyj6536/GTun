@@ -21,7 +21,7 @@ import (
 	"github.com/songgao/water"
 )
 
-func IcmpTunnelStart(tunCtrl *cfgUtil.TunCtrl, icmp *icmputil.ICMP, addr net.Addr, key string) error {
+func IcmpTunnelStart(tunCtrl *cfgUtil.TunCtrl, icmp *icmputil.ICMP, addr net.Addr, key, ip string) error {
 
 	value, _ := cfgUtil.IcmpTunStsCtrl.Load(key)
 	icmpTunCtrl := value.(*cfgUtil.IcmpTunCtrl)
@@ -38,8 +38,14 @@ func IcmpTunnelStart(tunCtrl *cfgUtil.TunCtrl, icmp *icmputil.ICMP, addr net.Add
 	icmpTunCtrl.Time = time.Now()
 	icmpTunCtrl.CancelFunc = cancelFunc
 
-	go func(iface *water.Interface, icmp *icmputil.ICMP, addr net.Addr, ctx context.Context, tunCtrl *cfgUtil.TunCtrl) { //read tun to icmp
+	conn, err := net.ListenPacket("ip:icmp", ip)
+	if err != nil {
+		return err
+	}
+
+	go func(iface *water.Interface, icmp *icmputil.ICMP, addr net.Addr, ctx context.Context, tunCtrl *cfgUtil.TunCtrl, conn net.PacketConn) { //read tun to icmp
 		defer func() {
+			conn.Close()
 			iface.Close()
 			logrus.WithFields(logrus.Fields{
 				"DeviceName": ccfg.DeviceName,
@@ -61,10 +67,16 @@ func IcmpTunnelStart(tunCtrl *cfgUtil.TunCtrl, icmp *icmputil.ICMP, addr net.Add
 					continue
 				}
 				retIcmp := icmp.Create(icmputil.Reply, 0, icmp.Identifier, icmp.SeqNum, append([]byte{0x03}, buf[:n]...))
-				icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
+				err = icmputil.IcmpWrite(conn, addr, retIcmp, len(retIcmp))
+				if err != nil {
+					logrus.WithFields(logrus.Fields{
+						"Addr":  addr,
+						"Error": err,
+					}).Errorln("Icmp Write Error.")
+				}
 			}
 		}
-	}(iface, icmp, addr, ctx, tunCtrl)
+	}(iface, icmp, addr, ctx, tunCtrl, conn)
 
 	return err
 }
@@ -203,7 +215,7 @@ func IcmpVerify(icmp *icmputil.ICMP, addr net.Addr, serverCfg *cfgUtil.ServerCfg
 				return
 			}
 		}
-		err := IcmpTunnelStart(tunCtrl, icmp, addr, key)
+		err := IcmpTunnelStart(tunCtrl, icmp, addr, key, serverCfg.ICMP.IP)
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
 				"TuName": tuName,

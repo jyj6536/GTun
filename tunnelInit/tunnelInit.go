@@ -246,7 +246,6 @@ func serverIcmpListen(scfg *cfgUtil.ServerCfg) error {
 							"Error":      err,
 						}).Errorln("Write to Tun Error.")
 					}
-					icmpTunCtrl.Time = time.Now()
 				}
 
 			case 0x04: //update cfgUtil.IcmpTunStsCtrl and send keepalive reply to client
