@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"net"
-	"sync"
 	"time"
 	"tunproject/cfgUtil"
 	icmputil "tunproject/protocolUtil/icmpUtil"
@@ -167,27 +166,8 @@ func ReadIcmpToTun(conn *net.IPConn, iface *water.Interface) {
 }
 
 //for icmp client
-func ReadTunToIcmp(conn *net.IPConn, iface *water.Interface, icmp *icmputil.ICMP, keepalive int) {
+func ReadTunToIcmp(conn *net.IPConn, iface *water.Interface, icmp *icmputil.ICMP) {
 	buf := make([]byte, 65536)
-	mutex := sync.Mutex{}
-
-	go func() { //this go routine send 0x04 to server periodicity to keep alive
-		ticker := time.NewTicker(time.Second * time.Duration(keepalive))
-		for range ticker.C {
-			data := icmp.Create(icmputil.Request, 0, icmp.Identifier, icmp.SeqNum, []byte{0x04})
-
-			mutex.Lock()
-			_, err := conn.Write(data)
-			mutex.Unlock()
-
-			if err != nil {
-				logrus.WithFields(logrus.Fields{
-					"Error": err,
-				}).Errorln("Write Icmp Error.")
-				continue
-			}
-		}
-	}()
 
 	for {
 		n, err := iface.Read(buf)
@@ -199,10 +179,7 @@ func ReadTunToIcmp(conn *net.IPConn, iface *water.Interface, icmp *icmputil.ICMP
 		}
 		data := icmp.Create(icmputil.Request, 0, icmp.Identifier, icmp.SeqNum, append([]byte{0x03}, buf[:n]...))
 
-		mutex.Lock()
 		_, err = conn.Write(data)
-		mutex.Unlock()
-
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
 				"Error": err,

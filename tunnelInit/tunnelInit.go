@@ -41,6 +41,16 @@ func ClientInit(clientCfg *cfgUtil.ClientCfg) error {
 			return err
 		}
 
+		addr, _ := net.ResolveIPAddr("ip", clientCfg.ICMP.Ip)
+		connKeep, err := net.DialIP("ip:icmp", nil, addr)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"TuName": clientCfg.TunnelName,
+				"Error":  err,
+			}).Errorln("Create Keepalive Conn Error.")
+			return err
+		}
+
 		cfgUtil.IcmpTunStsCtrl.Store("ClientIcmpTimeoutCtrl", &cfgUtil.IcmpTunCtrl{Time: time.Now()})
 
 		go func() { //this goroutine scan cfgUtil.IcmpIface periodicity to check whether server is available or not, if not, stop client iteself
@@ -56,8 +66,22 @@ func ClientInit(clientCfg *cfgUtil.ClientCfg) error {
 			}
 		}()
 
+		go func(conn *net.IPConn, icmp *icmputil.ICMP, keepalive int) { //this go routine send 0x04 to server periodicity to keep alive
+			ticker := time.NewTicker(time.Second * time.Duration(keepalive))
+			for range ticker.C {
+				data := icmp.Create(icmputil.Request, 0, icmp.Identifier, icmp.SeqNum, []byte{0x04})
+				_, err := conn.Write(data)
+				if err != nil {
+					logrus.WithFields(logrus.Fields{
+						"Error": err,
+					}).Errorln("Write Icmp Error.")
+					continue
+				}
+			}
+		}(connKeep, icmp, clientCfg.ICMP.Keepalive)
+
 		go protocolutil.ReadIcmpToTun(conn, iface)
-		go protocolutil.ReadTunToIcmp(conn, iface, icmp, clientCfg.ICMP.Keepalive)
+		go protocolutil.ReadTunToIcmp(conn, iface, icmp)
 	} else if clientCfg.Protocol == "quic" {
 		go verify(authutil.QUICClientVerify, clientCfg)
 	} else {
