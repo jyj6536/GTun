@@ -207,6 +207,9 @@ func TcpRead(conn net.TCPConn, data []byte, timeout int) (int, error) {
 		currLen += n
 	}
 	len = int(binary.LittleEndian.Uint32(dataLen))
+	if len > cap(data) {
+		return 0, errors.New("bad request")
+	}
 	currLen = 0
 	for currLen < len {
 		if timeout > 0 {
