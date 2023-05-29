@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"math/rand"
 	"net"
 	"strconv"
@@ -67,7 +68,11 @@ func IcmpTunnelStart(tunCtrl *cfgUtil.TunCtrl, icmp *icmputil.ICMP, addr net.Add
 					continue
 				}
 				retIcmp := icmp.Create(icmputil.Reply, 0, icmp.Identifier, icmp.SeqNum, append([]byte{0x03}, buf[:n]...))
-				err = icmputil.IcmpWrite(conn, addr, retIcmp, len(retIcmp))
+				dataLen := len(retIcmp)
+				n, err = conn.WriteTo(retIcmp[:dataLen], addr)
+				if err == nil && n != dataLen {
+					err = fmt.Errorf("icmp write error: receive %d but write %d", dataLen, n)
+				}
 				if err != nil {
 					logrus.WithFields(logrus.Fields{
 						"Addr":  addr,
@@ -93,7 +98,7 @@ func IcmpVerify(icmp *icmputil.ICMP, addr net.Addr, serverCfg *cfgUtil.ServerCfg
 				"Step":   "0x01",
 			}).Errorln("Tunnel doesn't Exist.")
 			retIcmp := icmp.Create(icmputil.Reply, icmp.Code, icmp.Identifier, icmp.SeqNum, []byte{0x01, '!', 'o', 'k'})
-			icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
+			icmputil.IcmpWriteToClient(&icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp})
 			return
 		}
 		value, ok := cfgUtil.TunCtrlMap.Load(tuName)
@@ -108,12 +113,12 @@ func IcmpVerify(icmp *icmputil.ICMP, addr net.Addr, serverCfg *cfgUtil.ServerCfg
 						"Step":   "0x01",
 					}).Errorln("Step1 Failed.")
 					retIcmp := icmp.Create(icmputil.Reply, icmp.Code, icmp.Identifier, icmp.SeqNum, []byte{0x01, '!', 'o', 'k'})
-					icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
+					icmputil.IcmpWriteToClient(&icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp})
 					return
 				}
 				retInfo := append([]byte{0x02}, intEnc...)
 				retIcmp := icmp.Create(icmputil.Reply, icmp.Code, icmp.Identifier, icmp.SeqNum, retInfo)
-				icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
+				icmputil.IcmpWriteToClient(&icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp})
 				return
 			} else {
 				logrus.WithFields(logrus.Fields{
@@ -122,7 +127,7 @@ func IcmpVerify(icmp *icmputil.ICMP, addr net.Addr, serverCfg *cfgUtil.ServerCfg
 					"Step":   "0x01",
 				}).Errorln("Step1 Failed.")
 				retIcmp := icmp.Create(icmputil.Reply, icmp.Code, icmp.Identifier, icmp.SeqNum, []byte{0x01, '!', 'o', 'k'})
-				icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
+				icmputil.IcmpWriteToClient(&icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp})
 				return
 			}
 		} else {
@@ -141,7 +146,7 @@ func IcmpVerify(icmp *icmputil.ICMP, addr net.Addr, serverCfg *cfgUtil.ServerCfg
 					"Step":   "0x01",
 				}).Errorln("Step1 Failed.")
 				retIcmp := icmp.Create(icmputil.Reply, icmp.Code, icmp.Identifier, icmp.SeqNum, []byte{0x01, '!', 'o', 'k'})
-				icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
+				icmputil.IcmpWriteToClient(&icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp})
 				return
 			}
 
@@ -155,13 +160,13 @@ func IcmpVerify(icmp *icmputil.ICMP, addr net.Addr, serverCfg *cfgUtil.ServerCfg
 					"Step":   "0x01",
 				}).Errorln("Step1 Failed.")
 				retIcmp := icmp.Create(icmputil.Reply, icmp.Code, icmp.Identifier, icmp.SeqNum, []byte{0x01, '!', 'o', 'k'})
-				icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
+				icmputil.IcmpWriteToClient(&icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp})
 				return
 			}
 
 			retInfo := append([]byte{0x02}, intEnc...)
 			retIcmp := icmp.Create(icmputil.Reply, icmp.Code, icmp.Identifier, icmp.SeqNum, retInfo)
-			icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
+			icmputil.IcmpWriteToClient(&icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp})
 
 			key := addr.String() + "+" + strconv.FormatUint(uint64(icmp.Identifier), 10)
 			cfgUtil.TunCtrlMap.Store(tuName, tunCtrl)
@@ -179,7 +184,7 @@ func IcmpVerify(icmp *icmputil.ICMP, addr net.Addr, serverCfg *cfgUtil.ServerCfg
 				"Step":  "0x02",
 			}).Errorln("Step2 Failed.")
 			retIcmp := icmp.Create(icmputil.Reply, icmp.Code, icmp.Identifier, icmp.SeqNum, []byte{0x02, '!', 'o', 'k'})
-			icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
+			icmputil.IcmpWriteToClient(&icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp})
 			return
 		}
 
@@ -196,7 +201,7 @@ func IcmpVerify(icmp *icmputil.ICMP, addr net.Addr, serverCfg *cfgUtil.ServerCfg
 					"Step":   "0x02",
 				}).Errorln("Step2 Failed.")
 				retIcmp := icmp.Create(icmputil.Reply, icmp.Code, icmp.Identifier, icmp.SeqNum, []byte{0x02, '!', 'o', 'k'})
-				icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
+				icmputil.IcmpWriteToClient(&icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp})
 				return
 			}
 
@@ -211,7 +216,7 @@ func IcmpVerify(icmp *icmputil.ICMP, addr net.Addr, serverCfg *cfgUtil.ServerCfg
 					"Step":   "0x02",
 				}).Errorln("Step2 Failed.")
 				retIcmp := icmp.Create(icmputil.Reply, icmp.Code, icmp.Identifier, icmp.SeqNum, []byte{0x02, '!', 'o', 'k'})
-				icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
+				icmputil.IcmpWriteToClient(&icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp})
 				return
 			}
 		}
@@ -223,12 +228,12 @@ func IcmpVerify(icmp *icmputil.ICMP, addr net.Addr, serverCfg *cfgUtil.ServerCfg
 				"Step":   "0x02",
 			}).Errorln("Step2 Failed.")
 			retIcmp := icmp.Create(icmputil.Reply, icmp.Code, icmp.Identifier, icmp.SeqNum, []byte{0x02, '!', 'o', 'k'})
-			icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
+			icmputil.IcmpWriteToClient(&icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp})
 			return
 		}
 		tunCtrl.Sts = "0x02"
 		retIcmp := icmp.Create(icmputil.Reply, 0, icmp.Identifier, icmp.SeqNum, []byte{0x03, 'o', 'k'})
-		icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
+		icmputil.IcmpWriteToClient(&icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp})
 
 	default:
 		return

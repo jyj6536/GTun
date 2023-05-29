@@ -41,16 +41,6 @@ func ClientInit(clientCfg *cfgUtil.ClientCfg) error {
 			return err
 		}
 
-		addr, _ := net.ResolveIPAddr("ip", clientCfg.ICMP.Ip)
-		connKeep, err := net.DialIP("ip:icmp", nil, addr)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"TuName": clientCfg.TunnelName,
-				"Error":  err,
-			}).Errorln("Create Keepalive Conn Error.")
-			return err
-		}
-
 		cfgUtil.IcmpTunStsCtrl.Store("ClientIcmpTimeoutCtrl", &cfgUtil.IcmpTunCtrl{Time: time.Now()})
 
 		go func() { //this goroutine scan cfgUtil.IcmpIface periodicity to check whether server is available or not, if not, stop client iteself
@@ -78,7 +68,7 @@ func ClientInit(clientCfg *cfgUtil.ClientCfg) error {
 					continue
 				}
 			}
-		}(connKeep, icmp, clientCfg.ICMP.Keepalive)
+		}(conn, icmp, clientCfg.ICMP.Keepalive)
 
 		go protocolutil.ReadIcmpToTun(conn, iface)
 		go protocolutil.ReadTunToIcmp(conn, iface, icmp)
@@ -205,8 +195,6 @@ func serverIcmpListen(scfg *cfgUtil.ServerCfg) error {
 		return err
 	}
 
-	go icmputil.WriteToConnServer() //this goroutine receive data from C and send to ConnServer
-
 	go func() { //this goroutine scan cfgUtil.IcmpTunStsCtrl periodicity to remove icmp tunnel which is timed out
 		ticker := time.NewTicker(time.Second * time.Duration(scfg.ICMP.BreakTime))
 		for range ticker.C { //scan periodicity per minute
@@ -279,7 +267,7 @@ func serverIcmpListen(scfg *cfgUtil.ServerCfg) error {
 					icmpTunCtrl := value.(*cfgUtil.IcmpTunCtrl)
 					icmpTunCtrl.Time = time.Now()
 					retIcmp := icmp.Create(icmputil.Reply, icmp.Code, icmp.Identifier, icmp.SeqNum, []byte{0x04})
-					icmputil.C <- &icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp}
+					icmputil.IcmpWriteToClient(&icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp})
 				}
 			default:
 			}

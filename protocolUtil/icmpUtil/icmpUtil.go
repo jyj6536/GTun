@@ -1,9 +1,8 @@
 package icmputil
 
 import (
+	"fmt"
 	"net"
-
-	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -26,8 +25,6 @@ type IcmpData struct {
 	Addr       net.Addr //remote addr to send
 	IcmpPacket []byte   //well-formed icmp packet to send
 }
-
-var C chan *IcmpData = make(chan *IcmpData, 100)
 
 func (icmp *ICMP) Construct(data []byte) bool {
 	if len(data) < 8 {
@@ -68,40 +65,31 @@ func (icmp *ICMP) checkSum(msg []byte) uint16 {
 	return ^uint16(s)
 }
 
-func IcmpWrite(conn net.PacketConn, addr net.Addr, data []byte, dataLen int) error {
-	for currLen := 0; currLen < dataLen; {
-		n, err := conn.WriteTo(data[currLen:dataLen], addr)
-		if err != nil {
-			return err
-		}
-		currLen += n
+//used by client
+func IcmpWriteClient(conn *net.IPConn, data []byte, dataLen int) error {
+	n, err := conn.Write(data[0:dataLen])
+	if err != nil {
+		return err
+	}
+	if n != dataLen {
+		return fmt.Errorf("icmp write error: receive %d but write %d", dataLen, n)
 	}
 	return nil
 }
 
-func IcmpWriteClient(conn *net.IPConn, data []byte, dataLen int) error {
-	for currLen := 0; currLen < dataLen; {
-		n, err := conn.Write(data[currLen:dataLen])
-		if err != nil {
-			return err
-		}
-		currLen += n
+//used by server
+func IcmpWriteToClient(icmpData *IcmpData) error {
+	dataLen := len(icmpData.IcmpPacket)
+	n, err := ConnServer.WriteTo(icmpData.IcmpPacket[:dataLen], icmpData.Addr)
+	if err != nil {
+		return err
+	}
+	if n != dataLen {
+		return fmt.Errorf("icmp write error: receive %d but write %d", dataLen, n)
 	}
 	return nil
 }
 
 func IcmpRead(conn net.PacketConn, buf []byte) (int, net.Addr, error) {
 	return conn.ReadFrom(buf)
-}
-
-func WriteToConnServer() {
-	for icmpData := range C {
-		err := IcmpWrite(ConnServer, icmpData.Addr, icmpData.IcmpPacket, len(icmpData.IcmpPacket))
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"Addr":  icmpData.Addr,
-				"Error": err,
-			}).Errorln("Icmp Write Error.")
-		}
-	}
 }
