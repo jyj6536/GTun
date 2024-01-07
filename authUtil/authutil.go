@@ -17,7 +17,7 @@ import (
 	quicutil "tunproject/protocolUtil/quicUtil"
 	tunutil "tunproject/tunUtil"
 
-	"github.com/lucas-clemente/quic-go"
+	"github.com/quic-go/quic-go"
 	"github.com/sirupsen/logrus"
 	"github.com/songgao/water"
 )
@@ -925,7 +925,7 @@ func QUICClientVerify(clientCfg *cfgUtil.ClientCfg) {
 	addrStr := ""
 	ag := &cipherUtil.AesGcm{}
 	timeout := clientCfg.QUIC.Timeout
-	qConfig := &quic.Config{KeepAlive: true, HandshakeIdleTimeout: time.Second * time.Duration(clientCfg.QUIC.ShakeTime), MaxIdleTimeout: time.Second * time.Duration(clientCfg.QUIC.IdleTime)}
+	qConfig := &quic.Config{KeepAlivePeriod: time.Duration(clientCfg.QUIC.Keepalive), HandshakeIdleTimeout: time.Second * time.Duration(clientCfg.QUIC.ShakeTime), MaxIdleTimeout: time.Second * time.Duration(clientCfg.QUIC.IdleTime)}
 
 	if clientCfg.QUIC.QuicUrl != "" {
 		addrStr = clientCfg.QUIC.QuicUrl + ":" + strconv.Itoa(clientCfg.QUIC.Port)
@@ -942,7 +942,7 @@ func QUICClientVerify(clientCfg *cfgUtil.ClientCfg) {
 		return
 	}
 
-	conn, err := quic.DialAddr(addrStr, tlsConfig, qConfig)
+	conn, err := quic.DialAddr(context.Background(), addrStr, tlsConfig, qConfig)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"RemoteAddr": addrStr,

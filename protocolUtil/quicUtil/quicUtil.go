@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/lucas-clemente/quic-go"
+	"github.com/quic-go/quic-go"
 	"github.com/sirupsen/logrus"
 	"github.com/songgao/water"
 )

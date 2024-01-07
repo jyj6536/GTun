@@ -16,7 +16,7 @@ import (
 	quicutil "tunproject/protocolUtil/quicUtil"
 	tunutil "tunproject/tunUtil"
 
-	"github.com/lucas-clemente/quic-go"
+	"github.com/quic-go/quic-go"
 	"github.com/sirupsen/logrus"
 )
 
@@ -278,7 +278,7 @@ func serverIcmpListen(scfg *cfgUtil.ServerCfg) error {
 
 func serverQUICListen(scfg *cfgUtil.ServerCfg) error {
 	tlsConfig, err := quicutil.GenerateTlsConfig(scfg.QUIC.CertPath, scfg.QUIC.KeyPath)
-	qConfig := &quic.Config{HandshakeIdleTimeout: time.Second * time.Duration(scfg.QUIC.ShakeTime), MaxIdleTimeout: time.Second * time.Duration(scfg.QUIC.IdleTime), KeepAlive: true}
+	qConfig := &quic.Config{HandshakeIdleTimeout: time.Second * time.Duration(scfg.QUIC.ShakeTime), MaxIdleTimeout: time.Second * time.Duration(scfg.QUIC.IdleTime), KeepAlivePeriod: time.Duration(scfg.QUIC.Keepavlive)}
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"Error": err,
@@ -295,7 +295,7 @@ func serverQUICListen(scfg *cfgUtil.ServerCfg) error {
 		return err
 	}
 
-	go func(listener quic.Listener) {
+	go func(listener *quic.Listener) {
 		for {
 			conn, err := listener.Accept(context.Background())
 			if err != nil {

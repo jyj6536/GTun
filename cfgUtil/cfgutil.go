@@ -35,13 +35,13 @@ type Tcp struct {
 	Ip        string `json:"ip"`
 	Port      int    `json:"port"`
 	Keepalive int    `json:"keepalive"` //set keepalive_probes(count of keepalive probe packets) and keepalive_time(idle time before starting keepalive, 0 means that don't use keepalive)
-	Timeout   int    `json:"timeout"`   //timeout used in send(recommended minimum is 5s)
+	Timeout   int    `json:"timeout"`   //timeout used in send
 }
 
 type Icmp struct {
 	Ip         string `json:"ip"`
 	Identifier int    `json:"identifier"`
-	Timeout    int    `json:"timeout"`    //timeout used in connecting(recommended minimum is 5s)
+	Timeout    int    `json:"timeout"`    //timeout used in connecting
 	Keepalive  int    `json:"keepalive"`  //interval between two probe packets(0 means default and default is 1s, should be less than breakTime)
 	RetryTimes int    `json:"retryTimes"` //when connecting to server, how many times client will retry if connecting times out(minimum is 1)
 	BreakTime  int    `json:"breakTime"`  //how long it will take before client abandons the tunnel when it don't receive any packet from the server(recommended minimum is 20s)
@@ -55,6 +55,7 @@ type QUIC struct {
 	ShakeTime     int    `json:"shakeTime"` //ssl shakehand timeout(0 means default and default is 5s)
 	IdleTime      int    `json:"idleTime"`  //maximum duration that may pass without any incoming network activity(0 means default and default is 30s, the actual value for the idle timeout is the minimum of this value and the peer's)
 	Timeout       int    `json:"timeout"`   //timeout used in send or receive(recommended minimum is 5s)
+	Keepalive     int    `json:"keepalive"` //time before quic to send a probe packet
 }
 
 type ClientCfg struct {
@@ -130,14 +131,15 @@ type ICMPCfg struct {
 }
 
 type QUICCfg struct {
-	Enable    bool   `json:"enable"`
-	Port      int    `json:"port"`
-	IP        string `json:"ip"`
-	CertPath  string `json:"certPath"`  //public key
-	KeyPath   string `json:"keyPath"`   //private key
-	ShakeTime int    `json:"shakeTime"` //ssl shakehand timeout(0 means default and default is 5s)
-	IdleTime  int    `json:"idleTime"`  //maximum duration that may pass without any incoming network activity(0 means default and default is  30s, the actual value for the idle timeout is the minimum of this value and the peer's)
-	Timeout   int    `json:"timeout"`   //timeout used in send or receive(recommended minimun is 5s)
+	Enable     bool   `json:"enable"`
+	Port       int    `json:"port"`
+	IP         string `json:"ip"`
+	CertPath   string `json:"certPath"`  //public key
+	KeyPath    string `json:"keyPath"`   //private key
+	ShakeTime  int    `json:"shakeTime"` //ssl shakehand timeout(0 means default and default is 5s)
+	IdleTime   int    `json:"idleTime"`  //maximum duration that may pass without any incoming network activity(0 means default and default is  30s, the actual value for the idle timeout is the minimum of this value and the peer's)
+	Timeout    int    `json:"timeout"`   //timeout used in send or receive
+	Keepavlive int    `json:"keepalive"` //time before quic to send a probe packet
 }
 
 func LoadServerCfg(path string) (*ServerCfg, error) {

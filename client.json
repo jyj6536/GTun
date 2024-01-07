@@ -22,7 +22,8 @@
         "allowInSecure":true,
         "shakeTime":5,
         "idleTime":30,
-        "timeout":5
+        "timeout":5,
+        "keepalive":5
     },
     "tunnelName":"tunnel1",
     "passwd":"aaaaa",
