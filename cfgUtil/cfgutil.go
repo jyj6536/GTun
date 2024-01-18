@@ -5,12 +5,37 @@ import (
 	"encoding/json"
 	"os"
 	"sync"
+	"syscall"
 	"time"
 	"tunproject/authUtil/cipherUtil"
+	"tunproject/event"
+	"tunproject/helper"
 
 	"github.com/sirupsen/logrus"
 	"github.com/songgao/water"
 )
+
+var CCfg *ClientCfg
+var SCfg *ServerCfg
+
+type TfdInfo struct {
+	Nfd     int32
+	TuName  string
+	Addr    syscall.Sockaddr
+	IcmpSrc *event.ICMP
+	Te      *event.TimeEvent
+}
+
+type NfdInfo struct {
+	Tfd    int32
+	TuName string
+	Te     *event.TimeEvent
+}
+
+var AtoT map[string]NfdInfo = map[string]NfdInfo{} //used for icmp and udp
+var NtoT map[int32]NfdInfo = map[int32]NfdInfo{}   //used for tcp
+var TtoN map[int32]TfdInfo = map[int32]TfdInfo{}
+var DataTransfer map[string]*helper.RingBuffer[[]byte] = map[string]*helper.RingBuffer[[]byte]{}
 
 type TunCtrl struct {
 	TunInfo   *TunnelCfg
@@ -40,7 +65,7 @@ type Tcp struct {
 
 type Icmp struct {
 	Ip         string `json:"ip"`
-	Identifier int    `json:"identifier"`
+	Identifier uint16 `json:"identifier"`
 	Timeout    int    `json:"timeout"`    //timeout used in connecting
 	Keepalive  int    `json:"keepalive"`  //interval between two probe packets(0 means default and default is 1s, should be less than breakTime)
 	RetryTimes int    `json:"retryTimes"` //when connecting to server, how many times client will retry if connecting times out(minimum is 1)
@@ -98,6 +123,7 @@ func LoadClientCfg(path string) (*ClientCfg, error) {
 	logrus.WithFields(logrus.Fields{
 		"CfgInfo": clientCfg,
 	}).Debugln("End Loading Client Config File.")
+	CCfg = clientCfg
 	return clientCfg, nil
 }
 
@@ -164,14 +190,38 @@ func LoadServerCfg(path string) (*ServerCfg, error) {
 	logrus.WithFields(logrus.Fields{
 		"CfgInfo": serverCfg,
 	}).Debugln("End Loading Server Config File.")
+	SCfg = serverCfg
 	return serverCfg, nil
 }
 
-func TunExist(tunName string, serverCfg *ServerCfg) *TunnelCfg {
-	for _, t := range serverCfg.Tunnels {
+func TunExist(tunName string) *TunnelCfg {
+	for _, t := range SCfg.Tunnels {
 		if t.TunnelName == tunName {
 			return &t
 		}
 	}
 	return nil
+}
+
+type Packet struct {
+	TuName string
+	Frame  []byte
+}
+
+func PacketDecode(data []byte) *Packet {
+	p := &Packet{}
+	n := int(data[0])
+	if n+1 > len(data) {
+		return nil
+	}
+	p.TuName = string(data[1 : n+1])
+	p.Frame = data[n+1:]
+	return p
+}
+
+func PacketEncode(tuName string, frame []byte) []byte {
+	var data []byte
+	data = append(data, byte(len(tuName)))
+	data = append(data, []byte(tuName)...)
+	return append(data, frame...)
 }

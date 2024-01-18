@@ -1,6 +1,6 @@
 module tunproject
 
-go 1.17
+go 1.21.4
 
 require (
 	github.com/quic-go/quic-go v0.40.0
