@@ -25,9 +25,12 @@ func init() {
 	})
 }
 
+var lockFile *os.File
+var pidFile string
+
 func lockPidFile(path string) error {
 	var err error
-	lockFile, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_EXCL, 0666)
+	lockFile, err = os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_EXCL, 0666)
 	if err != nil {
 		return err
 	}
@@ -69,7 +72,7 @@ func main() {
 					logrus.Errorln("Type of Config File must be \"client\".")
 					return nil
 				}
-				pidFile := cfgUtil.CCfg.PidFile
+				pidFile = cfgUtil.CCfg.PidFile
 				if pidFile != "" {
 					err = lockPidFile(pidFile)
 					if err != nil {
@@ -114,7 +117,7 @@ func main() {
 					logrus.Errorln("Type of Config File must be \"server\".")
 					return nil
 				}
-				pidFile := cfgUtil.SCfg.PidFile
+				pidFile = cfgUtil.SCfg.PidFile
 				if pidFile != "" {
 					err = lockPidFile(pidFile)
 					if err != nil {
@@ -138,4 +141,5 @@ func main() {
 	if err != nil {
 		fmt.Printf("%v", err)
 	}
+	os.Remove(pidFile)
 }

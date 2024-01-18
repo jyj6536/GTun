@@ -4,8 +4,7 @@
     "tcp":{
         "enable":true,
         "port":4567,
-        "ip":"0.0.0.0",
-        "timeout":5
+        "ip":"0.0.0.0"
     },
     "icmp":{
         "enable":true,

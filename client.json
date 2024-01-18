@@ -13,7 +13,6 @@
         "identifier":4567,
         "timeout":5,
         "keepalive":5,
-        "retryTimes":5,
         "breakTime":60
     },
     "quic":{

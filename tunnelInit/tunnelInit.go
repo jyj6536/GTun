@@ -19,6 +19,29 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+func addTuntoEpoll(fd int) (int, []syscall.EpollEvent, error) {
+	epfd, err := syscall.EpollCreate1(syscall.EPOLL_CLOEXEC)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"TuName": cfgUtil.CCfg.TunnelName,
+			"Error":  err,
+		}).Errorln("Creating Epoll Error.")
+		return 0, nil, err
+	}
+	ev := make([]syscall.EpollEvent, 1)
+	ev[0].Fd = int32(fd)
+	ev[0].Events = syscall.EPOLLIN
+	err = syscall.EpollCtl(epfd, syscall.EPOLL_CTL_ADD, fd, &ev[0])
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"TuName": cfgUtil.CCfg.TunnelName,
+			"Error":  err,
+		}).Errorln("Add Fd to Epoll Error.")
+		return 0, nil, err
+	}
+	return epfd, ev, err
+}
+
 func ClientInit(clientCfg *cfgUtil.ClientCfg) error {
 	logrus.Debugln("Start Initializing Client.")
 
@@ -46,27 +69,23 @@ func ClientInit(clientCfg *cfgUtil.ClientCfg) error {
 			return err
 		}
 
-		if cfgUtil.CCfg.TCP.Keepalive > 0 {
-			err = event.SetTcpKeepalive(cfgUtil.CCfg.TCP.Keepalive, conn)
-			if err != nil {
-				logrus.WithFields(logrus.Fields{
-					"Error": err,
-				}).Infoln("Set Keepavlive failed.")
-			}
-		}
-
 		var deviceType int
 		if cfgUtil.CCfg.DeviceType == "tun" {
 			deviceType = event.TUN
 		} else {
 			deviceType = event.TAP
 		}
-		fd, err := event.CreateTun(deviceType, cfgUtil.CCfg.DeviceName, cfgUtil.CCfg.Network, true)
+		fd, err := event.CreateTun(deviceType, cfgUtil.CCfg.DeviceName, cfgUtil.CCfg.Network, false)
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
 				"TuName": cfgUtil.CCfg.TunnelName,
 				"Error":  err,
 			}).Errorln("Creating Tap/Tun Device Error.")
+			return err
+		}
+
+		epfd, ev, err := addTuntoEpoll(fd)
+		if err != nil {
 			return err
 		}
 
@@ -85,7 +104,7 @@ func ClientInit(clientCfg *cfgUtil.ClientCfg) error {
 				}
 				p := cfgUtil.PacketDecode(buf[:n])
 				_, err = syscall.Write(fd, p.Frame)
-				if err != nil {
+				if err != nil && err != syscall.EAGAIN {
 					goto Stop
 				}
 			}
@@ -100,17 +119,37 @@ func ClientInit(clientCfg *cfgUtil.ClientCfg) error {
 				conn.Close()
 				syscall.Close(fd)
 			}()
+			tuNameBuf := cfgUtil.PacketEncode(cfgUtil.CCfg.TunnelName, []byte{})
 			buf := make([]byte, event.RBufMaxLen)
+			keepalive := cfgUtil.CCfg.TCP.Keepalive * int(time.Second) / int(time.Millisecond)
 			var err error
 			var n int
 			for {
-				n, err = syscall.Read(fd, buf)
-				if err != nil {
-					goto Stop
-				}
-				data := cfgUtil.PacketEncode(cfgUtil.CCfg.TunnelName, buf[:n])
-				err = event.TcpWrite(*conn, data, cfgUtil.CCfg.TCP.Timeout)
-				if err != nil {
+				n, err = syscall.EpollWait(epfd, ev, keepalive)
+				if n > 0 {
+					for {
+						n, err = syscall.Read(fd, buf)
+						if err == syscall.EAGAIN {
+							break
+						}
+						if err != nil {
+							logrus.WithFields(logrus.Fields{
+								"Error": err,
+							}).Errorln("Read Tun Errror.")
+							break
+						}
+						data := cfgUtil.PacketEncode(cfgUtil.CCfg.TunnelName, buf[:n])
+						err = event.TcpWrite(*conn, data, cfgUtil.CCfg.TCP.Timeout)
+						if err != nil {
+							goto Stop
+						}
+					}
+				} else if n == 0 {
+					err = event.TcpWrite(*conn, tuNameBuf, cfgUtil.CCfg.TCP.Timeout)
+					if err != nil {
+						goto Stop
+					}
+				} else {
 					goto Stop
 				}
 			}
@@ -160,23 +199,8 @@ func ClientInit(clientCfg *cfgUtil.ClientCfg) error {
 			return err
 		}
 
-		epfd, err := syscall.EpollCreate1(syscall.EPOLL_CLOEXEC)
+		epfd, ev, err := addTuntoEpoll(fd)
 		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"TuName": cfgUtil.CCfg.TunnelName,
-				"Error":  err,
-			}).Errorln("Creating Epoll Error.")
-			return err
-		}
-		ev := make([]syscall.EpollEvent, 1)
-		ev[0].Fd = int32(fd)
-		ev[0].Events = syscall.EPOLLIN
-		err = syscall.EpollCtl(epfd, syscall.EPOLL_CTL_ADD, fd, &ev[0])
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"TuName": cfgUtil.CCfg.TunnelName,
-				"Error":  err,
-			}).Errorln("Add Fd to Epoll Error.")
 			return err
 		}
 

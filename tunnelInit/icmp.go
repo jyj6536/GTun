@@ -48,7 +48,7 @@ func icmpReceive(fe *event.FileEvent, fd int32) {
 		}
 		nInfo.Tfd = int32(tfd)
 		nInfo.TuName = p.TuName
-		nInfo.Te = event.AddTimeEvent(int64(cfgUtil.SCfg.ICMP.BreakTime), tfd, timeoutHandler)
+		nInfo.Te = event.AddTimeEvent(int64(cfgUtil.SCfg.ICMP.BreakTime), tfd, icmpTimeout)
 		cfgUtil.AtoT[key] = nInfo
 		cfgUtil.TtoN[int32(tfd)] = cfgUtil.TfdInfo{Nfd: fd, TuName: p.TuName, Addr: fe.Addr, IcmpSrc: icmp}
 		cfgUtil.DataTransfer[p.TuName] = &helper.RingBuffer[[]byte]{}
@@ -61,7 +61,7 @@ func icmpReceive(fe *event.FileEvent, fd int32) {
 	syscall.Write(int(nInfo.Tfd), p.Frame)
 }
 
-func timeoutHandler(v interface{}) {
+func icmpTimeout(v interface{}) {
 	tfd := v.(int)
 	tInfo := cfgUtil.TtoN[int32(tfd)]
 	addr := net.IP(tInfo.Addr.(*syscall.SockaddrInet4).Addr[:]).String()

@@ -260,11 +260,3 @@ func TcpRead(conn net.TCPConn, data []byte, timeout int) (int, error) {
 	}
 	return len, nil
 }
-
-func SetTcpKeepalive(keepalive int, conn *net.TCPConn) error {
-	err := conn.SetKeepAlive(true)
-	if err != nil {
-		return err
-	}
-	return conn.SetKeepAlivePeriod(time.Second * time.Duration(keepalive))
-}

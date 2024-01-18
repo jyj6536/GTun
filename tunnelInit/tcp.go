@@ -55,6 +55,9 @@ func tcpRceive(fe *event.FileEvent, fd int32) {
 			return
 		}
 	}
+	if len(p.Frame) == 0 {
+		return
+	}
 	_, err := syscall.Write(int(nInfo.Tfd), p.Frame)
 	if err != nil && err != syscall.EAGAIN {
 		fe.Err = true
