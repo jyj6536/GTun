@@ -70,6 +70,5 @@ func timeoutHandler(v interface{}) {
 	delete(cfgUtil.AtoT, key)
 	delete(cfgUtil.DataTransfer, tInfo.TuName)
 	event.DelFileEvent(int32(tfd))
-	//syscall.Close(tfd)
 	event.CloseTun(tfd)
 }

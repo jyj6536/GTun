@@ -25,6 +25,17 @@ func init() {
 	})
 }
 
+func lockPidFile(path string) error {
+	var err error
+	lockFile, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_EXCL, 0666)
+	if err != nil {
+		return err
+	}
+	pid := os.Getpid()
+	_, err = lockFile.WriteString(strconv.Itoa(pid))
+	return err
+}
+
 func main() {
 	subCommands := []*cli.Command{
 		{
@@ -57,6 +68,17 @@ func main() {
 				if ccfg.Type != "client" {
 					logrus.Errorln("Type of Config File must be \"client\".")
 					return nil
+				}
+				pidFile := cfgUtil.CCfg.PidFile
+				if pidFile != "" {
+					err = lockPidFile(pidFile)
+					if err != nil {
+						logrus.WithFields(logrus.Fields{
+							"PidFile": pidFile,
+							"Error":   err,
+						}).Errorln("Cann't lock pidfile.")
+						return err
+					}
 				}
 				return tunnelInit.ClientInit(ccfg)
 			},
@@ -91,6 +113,17 @@ func main() {
 				if scfg.Type != "server" {
 					logrus.Errorln("Type of Config File must be \"server\".")
 					return nil
+				}
+				pidFile := cfgUtil.SCfg.PidFile
+				if pidFile != "" {
+					err = lockPidFile(pidFile)
+					if err != nil {
+						logrus.WithFields(logrus.Fields{
+							"PidFile": pidFile,
+							"Error":   err,
+						}).Errorln("Cann't lock pidfile.")
+						return err
+					}
 				}
 				return tunnelInit.ServerInit(scfg)
 			},

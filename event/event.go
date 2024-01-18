@@ -120,7 +120,6 @@ func EventRun() {
 		}
 		n, _ := syscall.EpollWait(el.Epfd, el.Events, int(timeout))
 		if n == -1 {
-			//
 			continue
 		}
 		setCurrentTime()

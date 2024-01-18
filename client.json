@@ -1,6 +1,7 @@
 {
     "type":"client", 
     "protocol":"tcp",
+    "pidfile":"./",
     "tcp":{
         "ip":"192.168.56.2",
         "port":4567,

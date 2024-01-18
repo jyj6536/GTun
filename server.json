@@ -1,5 +1,6 @@
 {
     "type":"server",
+    "pidfile":"",
     "tcp":{
         "enable":true,
         "port":4567,

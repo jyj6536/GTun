@@ -82,7 +82,6 @@ func tcpError(fe *event.FileEvent, fd int32) {
 	tInfo, exist := cfgUtil.NtoT[fd]
 	if exist {
 		event.DelFileEvent(tInfo.Tfd)
-		//syscall.Close(int(tInfo.Tfd))
 		event.CloseTun(int(tInfo.Tfd))
 		delete(cfgUtil.TtoN, tInfo.Tfd)
 		delete(cfgUtil.DataTransfer, tInfo.TuName)

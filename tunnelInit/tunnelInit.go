@@ -332,7 +332,7 @@ func ServerInit(serverCfg *cfgUtil.ServerCfg) error {
 
 	go event.EventRun()
 
-	if serverCfg.TCP.Enable {
+	if cfgUtil.SCfg.TCP.Enable {
 		// err = serverTcpListen(serverCfg)
 		// if err != nil {
 		// 	return err
@@ -345,11 +345,7 @@ func ServerInit(serverCfg *cfgUtil.ServerCfg) error {
 		}
 	}
 
-	if serverCfg.ICMP.Enable {
-		// err = serverIcmpListen(serverCfg)
-		// if err != nil {
-		// 	return err
-		// }
+	if cfgUtil.SCfg.ICMP.Enable {
 		err = event.IcmpListenerInit(cfgUtil.SCfg.ICMP.IP)
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
@@ -378,126 +374,6 @@ func ServerInit(serverCfg *cfgUtil.ServerCfg) error {
 	<-done
 	return nil
 }
-
-// func serverTcpListen(serverCfg *cfgUtil.ServerCfg) error {
-// 	addr := &net.TCPAddr{Port: serverCfg.TCP.Port, IP: net.ParseIP(serverCfg.TCP.IP)}
-// 	connServer, err := net.ListenTCP("tcp", addr)
-
-// 	if err != nil {
-// 		logrus.WithFields(logrus.Fields{
-// 			"Addr":  addr,
-// 			"Error": err,
-// 		}).Errorln("TcpListen failed.")
-// 		return err
-// 	}
-
-// 	go func(connServer *net.TCPListener) {
-// 		for {
-// 			conn, err := connServer.AcceptTCP() //tcp port listening
-// 			if err != nil {
-// 				logrus.WithFields(logrus.Fields{
-// 					"Error": err,
-// 				}).Errorln("Tcp Accept Failed.")
-// 				continue
-// 			}
-// 			go authutil.TcpVerify(conn, serverCfg)
-// 		}
-// 	}(connServer)
-// 	return err
-// }
-
-// func serverIcmpListen(scfg *cfgUtil.ServerCfg) error {
-// 	var err error
-// 	icmputil.ConnServer, err = net.ListenPacket("ip:icmp", scfg.ICMP.IP)
-
-// 	if err != nil {
-// 		logrus.WithFields(logrus.Fields{
-// 			"Addr":  scfg.ICMP.IP,
-// 			"Error": err,
-// 		}).Errorln("IcmpListen failed.")
-// 		return err
-// 	}
-
-// 	go func() { //this goroutine scan cfgUtil.IcmpTunStsCtrl periodicity to remove icmp tunnel which is timed out
-// 		ticker := time.NewTicker(time.Second * time.Duration(scfg.ICMP.BreakTime))
-// 		for range ticker.C { //scan periodicity per minute
-// 			cfgUtil.IcmpTunStsCtrl.Range(func(key, value interface{}) bool {
-// 				v := value.(*cfgUtil.IcmpTunCtrl)
-// 				if time.Since(v.Time) > time.Duration(scfg.ICMP.BreakTime)*time.Second { //no packet transfering in breaktime
-// 					if v.CancelFunc != nil {
-// 						v.CancelFunc()
-// 					}
-// 					v.Iface.Close()
-// 					tuName := v.TuName
-// 					cfgUtil.TunCtrlMap.Delete(tuName)
-// 					logrus.WithFields(logrus.Fields{
-// 						"TuName": tuName,
-// 					}).Debugln("Tunnel Finished.")
-// 					cfgUtil.IcmpTunStsCtrl.Delete(key)
-// 				}
-// 				return true
-// 			})
-// 		}
-// 	}()
-
-// 	go func() {
-// 		buf := make([]byte, 65536)
-// 		for {
-// 			n, addr, err := icmputil.ConnServer.ReadFrom(buf)
-// 			if err != nil {
-// 				logrus.WithFields(logrus.Fields{
-// 					"Addr":  addr,
-// 					"Error": err,
-// 				}).Errorln("Icmp Read Error.")
-// 				continue
-// 			}
-// 			icmp := &icmputil.ICMP{}
-// 			if !icmp.Construct(buf[:n]) {
-// 				logrus.WithFields(logrus.Fields{
-// 					"Error": errors.New("bad icmp packet"),
-// 				}).Errorln("Decode Icmp Packet failed.")
-// 				continue
-// 			}
-// 			if icmp.Type == icmputil.Reply {
-// 				continue
-// 			}
-// 			if len(icmp.Data) == 0 {
-// 				continue
-// 			}
-// 			switch icmp.Data[0] {
-// 			case 0x01, 0x02:
-// 				authutil.IcmpVerify(icmp, addr, scfg)
-// 			case 0x03:
-// 				key := addr.String() + "+" + strconv.FormatUint(uint64(icmp.Identifier), 10)
-// 				//value, ok := cfgUtil.IcmpIface.Load(key)
-// 				value, ok := cfgUtil.IcmpTunStsCtrl.Load(key)
-// 				if ok {
-// 					icmpTunCtrl := value.(*cfgUtil.IcmpTunCtrl)
-// 					iface := icmpTunCtrl.Iface
-// 					_, err := iface.Write(icmp.Data[1:])
-// 					if err != nil {
-// 						logrus.WithFields(logrus.Fields{
-// 							"DeviceName": iface.Name(),
-// 							"Error":      err,
-// 						}).Errorln("Write to Tun Error.")
-// 					}
-// 				}
-
-// 			case 0x04: //update cfgUtil.IcmpTunStsCtrl and send keepalive reply to client
-// 				key := addr.String() + "+" + strconv.FormatUint(uint64(icmp.Identifier), 10)
-// 				value, ok := cfgUtil.IcmpTunStsCtrl.Load(key)
-// 				if ok {
-// 					icmpTunCtrl := value.(*cfgUtil.IcmpTunCtrl)
-// 					icmpTunCtrl.Time = time.Now()
-// 					retIcmp := icmp.Create(icmputil.Reply, icmp.Code, icmp.Identifier, icmp.SeqNum, []byte{0x04})
-// 					icmputil.IcmpWriteToClient(&icmputil.IcmpData{Addr: addr, IcmpPacket: retIcmp})
-// 				}
-// 			default:
-// 			}
-// 		}
-// 	}()
-// 	return err
-// }
 
 func serverQUICListen(scfg *cfgUtil.ServerCfg) error {
 	tlsConfig, err := quicutil.GenerateTlsConfig(scfg.QUIC.CertPath, scfg.QUIC.KeyPath)

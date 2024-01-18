@@ -1,18 +1,13 @@
 package cfgUtil
 
 import (
-	"context"
 	"encoding/json"
 	"os"
-	"sync"
 	"syscall"
-	"time"
-	"tunproject/authUtil/cipherUtil"
 	"tunproject/event"
 	"tunproject/helper"
 
 	"github.com/sirupsen/logrus"
-	"github.com/songgao/water"
 )
 
 var CCfg *ClientCfg
@@ -23,7 +18,6 @@ type TfdInfo struct {
 	TuName  string
 	Addr    syscall.Sockaddr
 	IcmpSrc *event.ICMP
-	Te      *event.TimeEvent
 }
 
 type NfdInfo struct {
@@ -36,25 +30,6 @@ var AtoT map[string]NfdInfo = map[string]NfdInfo{} //used for icmp and udp
 var NtoT map[int32]NfdInfo = map[int32]NfdInfo{}   //used for tcp
 var TtoN map[int32]TfdInfo = map[int32]TfdInfo{}
 var DataTransfer map[string]*helper.RingBuffer[[]byte] = map[string]*helper.RingBuffer[[]byte]{}
-
-type TunCtrl struct {
-	TunInfo   *TunnelCfg
-	AesCipher *cipherUtil.AesGcm
-	TokenInt  int64  //used in icmp
-	Sts       string //used in icmp
-}
-
-var TunCtrlMap sync.Map
-
-var IcmpTunStsCtrl sync.Map //store status of icmp tunnels(key+identifier,IcmpTunCtrl)
-
-type IcmpTunCtrl struct {
-	Time       time.Time
-	CancelFunc context.CancelFunc
-	TuName     string
-	TunCtrl    *TunCtrl
-	Iface      *water.Interface
-}
 
 type Tcp struct {
 	Ip        string `json:"ip"`
@@ -86,6 +61,7 @@ type QUIC struct {
 type ClientCfg struct {
 	Type       string `json:"type"`
 	Protocol   string `json:"protocol"`
+	PidFile    string `json:"pidfile"`
 	TCP        Tcp    `json:"tcp"`
 	ICMP       Icmp   `json:"icmp"`
 	QUIC       QUIC   `json:"quic"`
@@ -137,6 +113,7 @@ type TunnelCfg struct {
 
 type ServerCfg struct {
 	Type    string      `json:"type"` //config file type : must be server
+	PidFile string      `json:"pidfile"`
 	TCP     TCPCfg      `json:"tcp"`
 	ICMP    ICMPCfg     `json:"icmp"`
 	QUIC    QUICCfg     `json:"quic"`
