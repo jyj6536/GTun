@@ -159,7 +159,7 @@ func tunReadHandler(fd int32) {
 	if !exist || fe.Err {
 		return
 	}
-	fe.RBuf = make([]byte, RBufMaxLen)
+	//fe.RBuf = make([]byte, RBufMaxLen)
 	n, err := syscall.Read(int(fd), fe.RBuf)
 	if err != nil {
 		fe.Err = true
@@ -170,5 +170,5 @@ func tunReadHandler(fd int32) {
 		readCallback[fe.CallbackIndex](fe, fd)
 	}
 	fe.RLen = 0
-	fe.RBuf = nil
+	//fe.RBuf = nil
 }

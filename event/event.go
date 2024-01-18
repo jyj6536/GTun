@@ -168,6 +168,8 @@ func AddFileEvent(fd int32, rp, wp, ep FileProc, mask uint32, callbackIndex int)
 		e.Events = mask
 		e.Fd = fd
 		fe = &FileEvent{Mask: mask, RProc: rp, WProc: wp, EPorc: ep, CallbackIndex: callbackIndex}
+		fe.RBuf = make([]byte, RBufMaxLen)
+		fe.WBuf = make([]byte, WBufMaxLen)
 		op = syscall.EPOLL_CTL_ADD
 		FdProcs[fd] = fe
 	}

@@ -141,5 +141,7 @@ func main() {
 	if err != nil {
 		fmt.Printf("%v", err)
 	}
-	os.Remove(pidFile)
+	if lockFile != nil {
+		os.Remove(pidFile)
+	}
 }

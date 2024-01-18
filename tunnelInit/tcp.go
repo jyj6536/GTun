@@ -14,7 +14,7 @@ func init() {
 }
 
 func tcpRceive(fe *event.FileEvent, fd int32) {
-	p := cfgUtil.PacketDecode(fe.RBuf)
+	p := cfgUtil.PacketDecode(fe.RBuf[:fe.RLen])
 	if p == nil {
 		fe.Err = true
 		return

@@ -56,14 +56,14 @@ func tcpReadHandler(fd int32) {
 	if !exist || fe.Err {
 		return
 	}
-	if len(fe.RBuf) == 0 {
-		fe.RBuf = make([]byte, HeaderLen)
+	if fe.RLen == 0 {
+		//fe.RBuf = make([]byte, HeaderLen)
 		fe.RLen = HeaderLen
 		fe.RCnt = 0
 		fe.ReadingContent = false
 	}
 	for fe.RCnt < fe.RLen {
-		n, err := syscall.Read(int(fd), fe.RBuf[fe.RCnt:])
+		n, err := syscall.Read(int(fd), fe.RBuf[fe.RCnt:fe.RLen])
 		if n == 0 || err != nil {
 			/*
 				n==0 connection is closed
@@ -80,14 +80,14 @@ func tcpReadHandler(fd int32) {
 	}
 	if !fe.ReadingContent {
 		fe.RCnt = 0
-		fe.RLen = int(binary.LittleEndian.Uint32(fe.RBuf))
+		fe.RLen = int(binary.LittleEndian.Uint32(fe.RBuf[:fe.RLen]))
 
 		if fe.RLen > RBufMaxLen { //bad header
 			fe.Err = true
 			return
 		}
 
-		fe.RBuf = make([]byte, fe.RLen)
+		//fe.RBuf = make([]byte, fe.RLen)
 		fe.ReadingContent = true
 		return
 	}
@@ -95,7 +95,8 @@ func tcpReadHandler(fd int32) {
 	if readCallback[fe.CallbackIndex] != nil {
 		readCallback[fe.CallbackIndex](fe, fd)
 	}
-	fe.RBuf = nil
+	//fe.RBuf = nil
+	fe.RLen = 0
 }
 
 func tcpWriteHandler(fd int32) {

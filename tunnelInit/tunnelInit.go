@@ -150,7 +150,9 @@ func ClientInit(clientCfg *cfgUtil.ClientCfg) error {
 						goto Stop
 					}
 				} else {
-					goto Stop
+					logrus.WithFields(logrus.Fields{
+						"Error": err,
+					}).Errorln("EpollWait Error.")
 				}
 			}
 		Stop:
@@ -392,6 +394,7 @@ func ServerInit(serverCfg *cfgUtil.ServerCfg) error {
 
 	go func() {
 		<-sigs
+		logrus.Debugln("Get SIGINT.")
 		done <- true
 	}()
 

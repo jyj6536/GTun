@@ -84,7 +84,7 @@ func icmpReadHandler(fd int32) {
 	if !exist {
 		return
 	}
-	fe.RBuf = make([]byte, RBufMaxLen)
+	//fe.RBuf = make([]byte, RBufMaxLen)
 	n, addr, err := syscall.Recvfrom(int(fd), fe.RBuf, 0)
 	if err != nil {
 		return
@@ -95,5 +95,5 @@ func icmpReadHandler(fd int32) {
 		readCallback[fe.CallbackIndex](fe, fd)
 	}
 	fe.RLen = 0
-	fe.RBuf = nil
+	//fe.RBuf = nil
 }
