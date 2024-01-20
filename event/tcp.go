@@ -46,7 +46,6 @@ func tcpAccetpHandler(fd int32) {
 		err = AddFileEvent(int32(nfd), tcpReadHandler, tcpWriteHandler, tcpErrorHandler, syscall.EPOLLIN|syscall.EPOLLRDHUP, TcpIndex)
 		if err != nil {
 			syscall.Close(nfd)
-			continue
 		}
 	}
 }
@@ -163,8 +162,6 @@ func tcpWriteHandler(fd int32) {
 }
 
 func tcpErrorHandler(fd int32) {
-	// DelFileEvent(fd)
-	// syscall.Close(int(fd))
 	fe, exist := FdProcs[fd]
 	if exist {
 		errorCallback[fe.CallbackIndex](fe, fd)

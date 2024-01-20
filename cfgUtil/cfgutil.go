@@ -34,7 +34,7 @@ var DataTransfer map[string]*helper.RingBuffer[[]byte] = map[string]*helper.Ring
 type Tcp struct {
 	Ip        string `json:"ip"`
 	Port      int    `json:"port"`
-	Keepalive int    `json:"keepalive"` //how long it will take before client starting to send probe packets
+	Keepalive int    `json:"keepalive"` //how long it will take before client starting to send probe packets without sending any packet
 	Timeout   int    `json:"timeout"`   //timeout used in send
 }
 
@@ -42,7 +42,7 @@ type Icmp struct {
 	Ip         string `json:"ip"`
 	Identifier uint16 `json:"identifier"`
 	Timeout    int    `json:"timeout"`   //timeout used in connecting
-	Keepalive  int    `json:"keepalive"` //how long it will take before client starting to send probe packets
+	Keepalive  int    `json:"keepalive"` //how long it will take before client starting to send probe packets without sending any packet
 	BreakTime  int    `json:"breakTime"` //how long it will take before client abandons the tunnel when it don't receive any packet from the server(recommended minimum is 20s)
 }
 
@@ -54,7 +54,7 @@ type QUIC struct {
 	ShakeTime     int    `json:"shakeTime"` //ssl shakehand timeout(0 means default and default is 5s)
 	IdleTime      int    `json:"idleTime"`  //maximum duration that may pass without any incoming network activity(0 means default and default is 30s, the actual value for the idle timeout is the minimum of this value and the peer's)
 	Timeout       int    `json:"timeout"`   //timeout used in send or receive(recommended minimum is 5s)
-	Keepalive     int    `json:"keepalive"` //time before quic to send a probe packet
+	Keepalive     int    `json:"keepalive"` //how long it will take before client starting to send probe packets without sending any packet
 }
 
 type ClientCfg struct {
@@ -68,7 +68,6 @@ type ClientCfg struct {
 	Passwd     string `json:"passwd"`
 	DeviceType string `json:"deviceType"`
 	DeviceName string `json:"deviceName"`
-	MutilQueue int    `json:"mutilQueue"`
 	Network    string `json:"network"`
 }
 
@@ -111,12 +110,13 @@ type TunnelCfg struct {
 }
 
 type ServerCfg struct {
-	Type    string      `json:"type"` //config file type : must be server
-	PidFile string      `json:"pidfile"`
-	TCP     TCPCfg      `json:"tcp"`
-	ICMP    ICMPCfg     `json:"icmp"`
-	QUIC    QUICCfg     `json:"quic"`
-	Tunnels []TunnelCfg `json:"tunnels"`
+	Type     string      `json:"type"` //config file type : must be server
+	UnixFile string      `json:"unixfile"`
+	PidFile  string      `json:"pidfile"`
+	TCP      TCPCfg      `json:"tcp"`
+	ICMP     ICMPCfg     `json:"icmp"`
+	QUIC     QUICCfg     `json:"quic"`
+	Tunnels  []TunnelCfg `json:"tunnels"`
 }
 
 type TCPCfg struct {
@@ -132,15 +132,14 @@ type ICMPCfg struct {
 }
 
 type QUICCfg struct {
-	Enable     bool   `json:"enable"`
-	Port       int    `json:"port"`
-	IP         string `json:"ip"`
-	CertPath   string `json:"certPath"`  //public key
-	KeyPath    string `json:"keyPath"`   //private key
-	ShakeTime  int    `json:"shakeTime"` //ssl shakehand timeout(0 means default and default is 5s)
-	IdleTime   int    `json:"idleTime"`  //maximum duration that may pass without any incoming network activity(0 means default and default is  30s, the actual value for the idle timeout is the minimum of this value and the peer's)
-	Timeout    int    `json:"timeout"`   //timeout used in send or receive
-	Keepavlive int    `json:"keepalive"` //time before quic to send a probe packet
+	Enable    bool   `json:"enable"`
+	Port      int    `json:"port"`
+	IP        string `json:"ip"`
+	CertPath  string `json:"certPath"`  //public key
+	KeyPath   string `json:"keyPath"`   //private key
+	ShakeTime int    `json:"shakeTime"` //ssl shakehand timeout(0 means default and default is 5s)
+	IdleTime  int    `json:"idleTime"`  //maximum duration that may pass without any incoming network activity(0 means default and default is  30s, the actual value for the idle timeout is the minimum of this value and the peer's)
+	Timeout   int    `json:"timeout"`   //timeout used in send or receive
 }
 
 func LoadServerCfg(path string) (*ServerCfg, error) {
@@ -185,6 +184,9 @@ type Packet struct {
 
 func PacketDecode(data []byte) *Packet {
 	p := &Packet{}
+	if len(data) == 0 {
+		return nil
+	}
 	n := int(data[0])
 	if n+1 > len(data) {
 		return nil

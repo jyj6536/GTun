@@ -1,6 +1,7 @@
 {
     "type":"server",
     "pidfile":"",
+    "unixfile":"",
     "tcp":{
         "enable":true,
         "port":4567,
@@ -19,8 +20,7 @@
         "keyPath":"./private.key",
         "shakeTime":5,
         "idleTime":30,
-        "timeout":5,
-        "keepalive":5
+        "timeout":5
     },
     "tunnels":[
         {

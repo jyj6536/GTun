@@ -8,12 +8,12 @@ import (
 )
 
 func init() {
-	rCallback[event.TcpIndex] = tcpRceive
-	wCallback[event.TcpIndex] = tcpSend
-	eCallback[event.TcpIndex] = tcpError
+	rCallback[event.UnixIndex] = unixReceive
+	wCallback[event.UnixIndex] = unixSend
+	eCallback[event.UnixIndex] = unixError
 }
 
-func tcpRceive(fe *event.FileEvent, fd int32) {
+func unixReceive(fe *event.FileEvent, fd int32) {
 	p := cfgUtil.PacketDecode(fe.RBuf[:fe.RLen])
 	if p == nil {
 		fe.Err = true
@@ -64,14 +64,10 @@ func tcpRceive(fe *event.FileEvent, fd int32) {
 	}
 }
 
-func tcpSend(fe *event.FileEvent, fd int32) {
+func unixSend(fe *event.FileEvent, fd int32) {
 	nInfo := cfgUtil.NtoT[fd]
 	rb := cfgUtil.DataTransfer[nInfo.TuName]
 	if !rb.IsEmpty() {
-		if fe.WBuf != nil {
-			fe.MoreToSend = true
-			return
-		}
 		frame, _ := rb.Read()
 		p := cfgUtil.PacketEncode(nInfo.TuName, frame)
 		fe.WBuf = p
@@ -83,7 +79,7 @@ func tcpSend(fe *event.FileEvent, fd int32) {
 	}
 }
 
-func tcpError(fe *event.FileEvent, fd int32) {
+func unixError(fe *event.FileEvent, fd int32) {
 	nInfo, exist := cfgUtil.NtoT[fd]
 	if exist {
 		event.DelFileEvent(nInfo.Tfd)

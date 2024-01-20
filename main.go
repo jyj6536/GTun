@@ -6,6 +6,7 @@ import (
 	"path"
 	"runtime"
 	"strconv"
+	"syscall"
 	"tunproject/cfgUtil"
 	"tunproject/tunnelInit"
 
@@ -30,8 +31,14 @@ var pidFile string
 
 func lockPidFile(path string) error {
 	var err error
-	lockFile, err = os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_EXCL, 0666)
-	if err != nil {
+	if lockFile, err = os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644); err != nil {
+		return err
+	}
+
+	if err = syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		return err
+	}
+	if err = lockFile.Truncate(0); err != nil {
 		return err
 	}
 	pid := os.Getpid()
@@ -64,11 +71,11 @@ func main() {
 				}
 				logrus.SetOutput(logHandle)
 				cfgFile := ctx.String("config")
-				ccfg, err := cfgUtil.LoadClientCfg(cfgFile)
+				_, err = cfgUtil.LoadClientCfg(cfgFile)
 				if err != nil {
 					return err
 				}
-				if ccfg.Type != "client" {
+				if cfgUtil.CCfg.Type != "client" {
 					logrus.Errorln("Type of Config File must be \"client\".")
 					return nil
 				}
@@ -76,6 +83,10 @@ func main() {
 				if pidFile != "" {
 					err = lockPidFile(pidFile)
 					if err != nil {
+						if lockFile != nil {
+							lockFile.Close()
+							lockFile = nil
+						}
 						logrus.WithFields(logrus.Fields{
 							"PidFile": pidFile,
 							"Error":   err,
@@ -83,7 +94,7 @@ func main() {
 						return err
 					}
 				}
-				return tunnelInit.ClientInit(ccfg)
+				return tunnelInit.ClientInit()
 			},
 		},
 		{
@@ -121,6 +132,10 @@ func main() {
 				if pidFile != "" {
 					err = lockPidFile(pidFile)
 					if err != nil {
+						if lockFile != nil {
+							lockFile.Close()
+							lockFile = nil
+						}
 						logrus.WithFields(logrus.Fields{
 							"PidFile": pidFile,
 							"Error":   err,

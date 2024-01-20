@@ -169,6 +169,4 @@ func tunReadHandler(fd int32) {
 	if readCallback[fe.CallbackIndex] != nil {
 		readCallback[fe.CallbackIndex](fe, fd)
 	}
-	fe.RLen = 0
-	//fe.RBuf = nil
 }

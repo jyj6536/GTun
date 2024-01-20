@@ -29,6 +29,5 @@
     "passwd":"aaaaa",
     "deviceType":"tap",
     "deviceName":"tun1",
-    "mutilQueue":2,
     "network":"10.0.0.2/24"
 }

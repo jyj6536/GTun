@@ -2,18 +2,16 @@ package tunnelInit
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
-	authutil "tunproject/authUtil"
-	"tunproject/authUtil/cipherUtil"
 	"tunproject/cfgUtil"
 	"tunproject/event"
-	quicutil "tunproject/protocolUtil/quicUtil"
-	tunutil "tunproject/tunUtil"
 
 	"github.com/quic-go/quic-go"
 	"github.com/sirupsen/logrus"
@@ -42,23 +40,12 @@ func addTuntoEpoll(fd int) (int, []syscall.EpollEvent, error) {
 	return epfd, ev, err
 }
 
-func ClientInit(clientCfg *cfgUtil.ClientCfg) error {
+func ClientInit() error {
 	logrus.Debugln("Start Initializing Client.")
 
 	if cfgUtil.CCfg.Protocol == "tcp" {
 		//go verify(authutil.TcpClientVerify, clientCfg)
 		addr := &net.TCPAddr{Port: cfgUtil.CCfg.TCP.Port, IP: net.ParseIP(cfgUtil.CCfg.TCP.Ip)}
-
-		ag := &cipherUtil.AesGcm{}
-		err := ag.Init(cfgUtil.CCfg.Passwd)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"TuName": cfgUtil.CCfg.TunnelName,
-				"Error":  err,
-			}).Errorln("Create AesCipher Failed.")
-			return err
-		}
-
 		conn, err := net.DialTCP("tcp", nil, addr)
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
@@ -162,15 +149,6 @@ func ClientInit(clientCfg *cfgUtil.ClientCfg) error {
 		}()
 
 	} else if cfgUtil.CCfg.Protocol == "icmp" {
-		ag := &cipherUtil.AesGcm{}
-		err := ag.Init(cfgUtil.CCfg.Passwd)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{
-				"Error": err,
-			}).Errorln("Create AesCipher Error.")
-			return err
-		}
-
 		addr, err := net.ResolveIPAddr("ip", cfgUtil.CCfg.ICMP.Ip)
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
@@ -294,11 +272,129 @@ func ClientInit(clientCfg *cfgUtil.ClientCfg) error {
 				}
 			}
 		}()
-	} else if clientCfg.Protocol == "quic" {
-		go verify(authutil.QUICClientVerify, clientCfg)
+	} else if cfgUtil.CCfg.Protocol == "quic" {
+		tlsConfig := &tls.Config{InsecureSkipVerify: cfgUtil.CCfg.QUIC.AllowInSecure, NextProtos: []string{"quic-tunproject"}}
+		addrStr := ""
+		qConfig := &quic.Config{HandshakeIdleTimeout: time.Second * time.Duration(cfgUtil.CCfg.QUIC.ShakeTime), MaxIdleTimeout: time.Second * time.Duration(cfgUtil.CCfg.QUIC.IdleTime)}
+
+		if cfgUtil.CCfg.QUIC.QuicUrl != "" {
+			addrStr = cfgUtil.CCfg.QUIC.QuicUrl + ":" + strconv.Itoa(cfgUtil.CCfg.QUIC.Port)
+		} else {
+			addr := net.UDPAddr{IP: net.ParseIP(cfgUtil.CCfg.QUIC.Ip), Port: cfgUtil.CCfg.QUIC.Port}
+			addrStr = addr.String()
+		}
+		conn, err := quic.DialAddr(context.Background(), addrStr, tlsConfig, qConfig)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"RemoteAddr": addrStr,
+				"Error":      err,
+			}).Errorln("Connect to RemoteAddr Error.")
+			return err
+		}
+
+		stream, err := conn.OpenStreamSync(context.Background())
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"Error": err,
+			}).Errorln("QUIC Open Stream Error.")
+			return err
+		}
+
+		var deviceType int
+		if cfgUtil.CCfg.DeviceType == "tun" {
+			deviceType = event.TUN
+		} else {
+			deviceType = event.TAP
+		}
+		fd, err := event.CreateTun(deviceType, cfgUtil.CCfg.DeviceName, cfgUtil.CCfg.Network, false)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"TuName": cfgUtil.CCfg.TunnelName,
+				"Error":  err,
+			}).Errorln("Creating Tap/Tun Device Error.")
+			return err
+		}
+
+		epfd, ev, err := addTuntoEpoll(fd)
+		if err != nil {
+			return err
+		}
+
+		go func() {
+			defer func() {
+				stream.Close()
+				syscall.Close(fd)
+			}()
+			buf := make([]byte, 65536)
+			var err error
+			var n int
+			for {
+				n, err = QuicRead(stream, buf, 0)
+				if err != nil {
+					goto Stop
+				}
+				p := cfgUtil.PacketDecode(buf[:n])
+				_, err = syscall.Write(fd, p.Frame)
+				if err != nil && err != syscall.EAGAIN {
+					goto Stop
+				}
+			}
+		Stop:
+			logrus.WithFields(logrus.Fields{
+				"Error": err,
+			}).Errorln("ReadQuicToTunClient Error.")
+		}()
+
+		go func() {
+			defer func() {
+				stream.Close()
+				syscall.Close(fd)
+			}()
+			tuNameBuf := cfgUtil.PacketEncode(cfgUtil.CCfg.TunnelName, []byte{})
+			buf := make([]byte, event.RBufMaxLen)
+			keepalive := cfgUtil.CCfg.QUIC.Keepalive * int(time.Second) / int(time.Millisecond)
+			var err error
+			var n int
+			for {
+				n, err = syscall.EpollWait(epfd, ev, keepalive)
+				if n > 0 {
+					for {
+						n, err = syscall.Read(fd, buf)
+						if err == syscall.EAGAIN {
+							break
+						}
+						if err != nil {
+							logrus.WithFields(logrus.Fields{
+								"Error": err,
+							}).Errorln("Read Tun Errror.")
+							break
+						}
+						data := cfgUtil.PacketEncode(cfgUtil.CCfg.TunnelName, buf[:n])
+						err = QuicWrite(stream, data, cfgUtil.CCfg.QUIC.Timeout)
+						if err != nil {
+							goto Stop
+						}
+					}
+				} else if n == 0 {
+					err = QuicWrite(stream, tuNameBuf, cfgUtil.CCfg.TCP.Timeout)
+					if err != nil {
+						goto Stop
+					}
+				} else {
+					logrus.WithFields(logrus.Fields{
+						"Error": err,
+					}).Errorln("EpollWait Error.")
+				}
+			}
+		Stop:
+			logrus.WithFields(logrus.Fields{
+				"Error": err,
+			}).Errorln("ReadTunToQUICClient Error.")
+		}()
+
 	} else {
 		logrus.WithFields(logrus.Fields{
-			"Protocol": clientCfg.Protocol,
+			"Protocol": cfgUtil.CCfg.Protocol,
 		}).Errorln("Unknown Protocol.")
 		return nil
 	}
@@ -318,27 +414,6 @@ func ClientInit(clientCfg *cfgUtil.ClientCfg) error {
 
 	logrus.Debugln("Process Exited.")
 	return nil
-}
-
-func verify(f func(*cfgUtil.ClientCfg), clientCfg *cfgUtil.ClientCfg) {
-	for i := 0; i < clientCfg.MutilQueue; i++ {
-		f(clientCfg)
-	}
-
-	ticker := time.NewTicker(time.Second * time.Duration(10))
-	failureCnt := 0
-	for range ticker.C {
-		if !tunutil.TunExist(clientCfg.DeviceName) {
-			logrus.Debugln("Tun/Tap Device dosen't Exist.")
-			failureCnt++
-			logrus.WithFields(logrus.Fields{
-				"failureCnt": failureCnt,
-			}).Debugln("Start Verifying.")
-			for i := 0; i < clientCfg.MutilQueue; i++ {
-				f(clientCfg)
-			}
-		}
-	}
 }
 
 var rCallback [event.CallbackNum]event.Callback
@@ -380,8 +455,14 @@ func ServerInit(serverCfg *cfgUtil.ServerCfg) error {
 		}
 	}
 
-	if serverCfg.QUIC.Enable {
-		err = serverQUICListen(serverCfg)
+	if cfgUtil.SCfg.QUIC.Enable {
+
+		err = event.UnixListenerInit(cfgUtil.SCfg.UnixFile, 10)
+		if err!=nil{
+			return err
+		}
+
+		err = serverQUICListen()
 		if err != nil {
 			return err
 		}
@@ -402,16 +483,16 @@ func ServerInit(serverCfg *cfgUtil.ServerCfg) error {
 	return nil
 }
 
-func serverQUICListen(scfg *cfgUtil.ServerCfg) error {
-	tlsConfig, err := quicutil.GenerateTlsConfig(scfg.QUIC.CertPath, scfg.QUIC.KeyPath)
-	qConfig := &quic.Config{HandshakeIdleTimeout: time.Second * time.Duration(scfg.QUIC.ShakeTime), MaxIdleTimeout: time.Second * time.Duration(scfg.QUIC.IdleTime), KeepAlivePeriod: time.Duration(scfg.QUIC.Keepavlive)}
+func serverQUICListen() error {
+	tlsConfig, err := GenerateTlsConfig(cfgUtil.SCfg.QUIC.CertPath, cfgUtil.SCfg.QUIC.KeyPath)
+	qConfig := &quic.Config{HandshakeIdleTimeout: time.Second * time.Duration(cfgUtil.SCfg.QUIC.ShakeTime), MaxIdleTimeout: time.Second * time.Duration(cfgUtil.SCfg.QUIC.IdleTime)}
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"Error": err,
 		}).Errorln("Generate TLS Config Failed.")
 		return err
 	}
-	addr := net.UDPAddr{IP: net.ParseIP(scfg.QUIC.IP), Port: scfg.QUIC.Port}
+	addr := net.UDPAddr{IP: net.ParseIP(cfgUtil.SCfg.QUIC.IP), Port: cfgUtil.SCfg.QUIC.Port}
 
 	listener, err := quic.ListenAddr(addr.String(), tlsConfig, qConfig)
 	if err != nil {
@@ -421,7 +502,7 @@ func serverQUICListen(scfg *cfgUtil.ServerCfg) error {
 		return err
 	}
 
-	go func(listener *quic.Listener) {
+	go func() {
 		for {
 			conn, err := listener.Accept(context.Background())
 			if err != nil {
@@ -437,8 +518,71 @@ func serverQUICListen(scfg *cfgUtil.ServerCfg) error {
 				}).Errorln("QUIC Accept Stream Failed.")
 				continue
 			}
-			go authutil.QUICVerify(stream, scfg)
+			go func() {
+				fd, err := syscall.Socket(syscall.AF_UNIX, syscall.SOCK_SEQPACKET, 0)
+				if err != nil {
+					logrus.WithFields(logrus.Fields{
+						"Error": err,
+					}).Errorln("Creating UnixSocket Error.")
+					return
+				}
+
+				addr := &syscall.SockaddrUnix{Name: cfgUtil.SCfg.UnixFile}
+				err = syscall.Connect(fd, addr)
+				if err != nil {
+					logrus.WithFields(logrus.Fields{
+						"Error": err,
+					}).Errorln("Creating UnixSocket Error.")
+					return
+				}
+				go func() {
+					defer func() {
+						stream.Close()
+						syscall.Close(fd)
+					}()
+					var n int
+					var err error
+					buf := make([]byte, event.RBufMaxLen)
+					for {
+						n, err = QuicRead(stream, buf, 0)
+						if err != nil {
+							goto Stop
+						}
+						_, err = syscall.Write(fd, buf[:n])
+						if err != nil {
+							goto Stop
+						}
+					}
+				Stop:
+					logrus.WithFields(logrus.Fields{
+						"Error": err,
+					}).Errorln("ReadQuicToUnix Error.")
+				}()
+				go func() {
+					defer func() {
+						stream.Close()
+						syscall.Close(fd)
+					}()
+					buf := make([]byte, event.RBufMaxLen)
+					var n int
+					var err error
+					for {
+						n, err = syscall.Read(fd, buf)
+						if err != nil {
+							goto Stop
+						}
+						err = QuicWrite(stream, buf[:n], cfgUtil.SCfg.QUIC.Timeout)
+						if err != nil {
+							goto Stop
+						}
+					}
+				Stop:
+					logrus.WithFields(logrus.Fields{
+						"Error": err,
+					}).Errorln("ReadUnixToQuic Error.")
+				}()
+			}()
 		}
-	}(listener)
+	}()
 	return err
 }

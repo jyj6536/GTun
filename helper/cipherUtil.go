@@ -44,3 +44,9 @@ func (ag *AesGcm) Decrypt(data []byte) ([]byte, error) {
 	}
 	return plainData, nil
 }
+
+// ag := &cipherUtil.AesGcm{}
+// err := ag.Init(clientCfg.Passwd)
+// if err != nil {
+// 	return err
+// }

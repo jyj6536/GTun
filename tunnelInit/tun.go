@@ -23,7 +23,7 @@ func tunReceive(fe *event.FileEvent, fd int32) {
 		syscall.Sendto(int(tInfo.Nfd), p, 0, tInfo.Addr)
 		return
 	}
-	//for tcp
+	//for tcp and unix
 	rb := cfgUtil.DataTransfer[tInfo.TuName]
 	rb.Write(fe.RBuf[:fe.RLen])
 	event.EnableEpollout(tInfo.Nfd)
