@@ -5,7 +5,6 @@ go 1.21.4
 require (
 	github.com/quic-go/quic-go v0.40.0
 	github.com/sirupsen/logrus v1.9.3
-	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	github.com/urfave/cli/v2 v2.25.7
 	github.com/vishvananda/netlink v1.1.0
 )

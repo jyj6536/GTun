@@ -117,7 +117,9 @@ func CreateTun(devType int, ifName, network string, block bool) (fd int, err err
 
 	err = netlink.LinkSetUp(link)
 	if err == nil {
-		devPool[fd] = &devState{InUse: true, DevType: devType, Devname: ifName, Addr: addr}
+		if len(devPool) < DevPoolSize {
+			devPool[fd] = &devState{InUse: true, DevType: devType, Devname: ifName, Addr: addr}
+		}
 		return
 	}
 Error:
@@ -126,11 +128,13 @@ Error:
 }
 
 func CloseTun(fd int) {
-	if len(devPool) >= DevPoolSize {
+	var ds *devState
+	var exist bool
+	if ds, exist = devPool[fd]; !exist {
 		syscall.Close(fd)
 		return
 	}
-	ds := devPool[fd]
+
 	link, err := netlink.LinkByName(ds.Devname)
 	if err != nil {
 		goto Error
@@ -159,7 +163,7 @@ func tunReadHandler(fd int32) {
 	if !exist || fe.Err {
 		return
 	}
-	//fe.RBuf = make([]byte, RBufMaxLen)
+
 	n, err := syscall.Read(int(fd), fe.RBuf)
 	if err != nil {
 		fe.Err = true

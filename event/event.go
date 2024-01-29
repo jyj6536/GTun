@@ -184,6 +184,9 @@ func DelFileEvent(fd int32) {
 
 func DisableEpollout(fd int32) error {
 	fe := FdProcs[fd]
+	if fe.Mask&syscall.EPOLLOUT == 0 {
+		return nil
+	}
 	e := &syscall.EpollEvent{Fd: fd}
 	fe.Mask &= ^uint32(syscall.EPOLLOUT)
 	e.Events = fe.Mask

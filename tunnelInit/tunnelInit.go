@@ -420,7 +420,7 @@ var rCallback [event.CallbackNum]event.Callback
 var wCallback [event.CallbackNum]event.Callback
 var eCallback [event.CallbackNum]event.Callback
 
-func ServerInit(serverCfg *cfgUtil.ServerCfg) error {
+func ServerInit() error {
 	var err error
 
 	err = event.EventInit(512, rCallback, wCallback, eCallback)
@@ -458,7 +458,7 @@ func ServerInit(serverCfg *cfgUtil.ServerCfg) error {
 	if cfgUtil.SCfg.QUIC.Enable {
 
 		err = event.UnixListenerInit(cfgUtil.SCfg.UnixFile, 10)
-		if err!=nil{
+		if err != nil {
 			return err
 		}
 

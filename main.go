@@ -120,11 +120,11 @@ func main() {
 				}
 				logrus.SetOutput(logHandle)
 				cfgFile := ctx.String("config")
-				scfg, err := cfgUtil.LoadServerCfg(cfgFile)
+				_, err = cfgUtil.LoadServerCfg(cfgFile)
 				if err != nil {
 					return nil
 				}
-				if scfg.Type != "server" {
+				if cfgUtil.SCfg.Type != "server" {
 					logrus.Errorln("Type of Config File must be \"server\".")
 					return nil
 				}
@@ -143,7 +143,7 @@ func main() {
 						return err
 					}
 				}
-				return tunnelInit.ServerInit(scfg)
+				return tunnelInit.ServerInit()
 			},
 		},
 	}
