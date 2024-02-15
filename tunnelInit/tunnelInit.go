@@ -203,7 +203,7 @@ func ClientInit() error {
 					}).Errorln("Bad Response.")
 					continue
 				}
-				if icmp.Type != event.Reply {
+				if icmp.Type != event.Reply || icmp.Identifier != cfgUtil.CCfg.ICMP.Identifier {
 					continue
 				}
 				p := cfgUtil.PacketDecode(icmp.Data)
@@ -232,9 +232,9 @@ func ClientInit() error {
 		go func() {
 			tuNameBuf := cfgUtil.PacketEncode(cfgUtil.CCfg.TunnelName, []byte{})
 			buf := make([]byte, event.RBufMaxLen)
-			timeout := cfgUtil.CCfg.ICMP.Keepalive * int(time.Second) / int(time.Millisecond)
+			keepalive := cfgUtil.CCfg.ICMP.Keepalive * int(time.Second) / int(time.Millisecond)
 			for {
-				n, err := syscall.EpollWait(epfd, ev, timeout)
+				n, err := syscall.EpollWait(epfd, ev, keepalive)
 				if n > 0 {
 					for {
 						n, err = syscall.Read(fd, buf)

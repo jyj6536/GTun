@@ -68,7 +68,7 @@ var timeEventHead *TimeEvent = &TimeEvent{}
 /*
 when: timeout after when seconds
 clientData: user specified data
-tProc: callbacl function
+tProc: callback function
 */
 func AddTimeEvent(when int64, clientData interface{}, tProc TimeProc) *TimeEvent {
 	te := &TimeEvent{When: when*1000 + currTimeCached, ClientData: clientData, TProc: tProc}

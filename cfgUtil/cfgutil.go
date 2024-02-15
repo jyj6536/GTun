@@ -41,9 +41,7 @@ type Tcp struct {
 type Icmp struct {
 	Ip         string `json:"ip"`
 	Identifier uint16 `json:"identifier"`
-	Timeout    int    `json:"timeout"`   //timeout used in connecting
 	Keepalive  int    `json:"keepalive"` //how long it will take before client starting to send probe packets without sending any packet
-	BreakTime  int    `json:"breakTime"` //how long it will take before client abandons the tunnel when it don't receive any packet from the server(recommended minimum is 20s)
 }
 
 type QUIC struct {

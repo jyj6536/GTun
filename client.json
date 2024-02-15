@@ -11,9 +11,7 @@
     "icmp":{
         "ip":"192.168.56.2",
         "identifier":4567,
-        "timeout":5,
-        "keepalive":5,
-        "breakTime":60
+        "keepalive":5
     },
     "quic":{
         "ip":"192.168.56.2",
