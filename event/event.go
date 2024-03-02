@@ -10,11 +10,12 @@ const (
 	RBufMaxLen           = 65535
 	WBufMaxLen           = 65535
 	HeaderLen            = 4
-	CallbackNum          = 4
+	CallbackNum          = 5
 	TcpIndex             = 0
 	TunIndex             = 1
 	IcmpIndex            = 2
 	UnixIndex            = 3
+	UdpIndex             = 4
 	INT64_MAX      int64 = 9223372036854775807
 )
 

@@ -272,6 +272,116 @@ func ClientInit() error {
 				}
 			}
 		}()
+	} else if cfgUtil.CCfg.Protocol == "udp" {
+		addr, err := net.ResolveUDPAddr("udp", cfgUtil.CCfg.UDP.Ip+":"+strconv.Itoa(cfgUtil.CCfg.UDP.Port))
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"Error": err,
+			}).Errorln("Addr Resolve Error.")
+			return err
+		}
+		conn, err := net.DialUDP("udp", nil, addr)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"Error": err,
+			}).Errorln("Create Socket Error.")
+			return err
+		}
+
+		var deviceType int
+		if cfgUtil.CCfg.DeviceType == "tun" {
+			deviceType = event.TUN
+		} else {
+			deviceType = event.TAP
+		}
+		fd, err := event.CreateTun(deviceType, cfgUtil.CCfg.DeviceName, cfgUtil.CCfg.Network, false)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"TuName": cfgUtil.CCfg.TunnelName,
+				"Error":  err,
+			}).Errorln("Creating Tap/Tun Device Error.")
+			return err
+		}
+
+		epfd, ev, err := addTuntoEpoll(fd)
+		if err != nil {
+			return err
+		}
+
+		go func() {
+			buf := make([]byte, event.RBufMaxLen)
+
+			for {
+				n, err := conn.Read(buf)
+				if err != nil {
+					logrus.WithFields(logrus.Fields{
+						"Error": err,
+					}).Errorln("Read Udp Error.")
+					continue
+				}
+				p := cfgUtil.PacketDecode(buf[:n])
+				if p == nil {
+					err = errors.New("bad udp data")
+					logrus.WithFields(logrus.Fields{
+						"Error": err,
+					}).Errorln("Bad Response.")
+					continue
+				}
+				if p.TuName != cfgUtil.CCfg.TunnelName {
+					continue
+				}
+				if len(p.Frame) == 0 { //receive probe response
+					continue
+				}
+				_, err = syscall.Write(fd, p.Frame)
+				if err != nil {
+					logrus.WithFields(logrus.Fields{
+						"Error": err,
+					}).Errorln("Write Tun Error.")
+				}
+			}
+		}()
+
+		go func() {
+			tuNameBuf := cfgUtil.PacketEncode(cfgUtil.CCfg.TunnelName, []byte{})
+			buf := make([]byte, event.RBufMaxLen)
+			keepalive := cfgUtil.CCfg.UDP.Keepalive * int(time.Second) / int(time.Millisecond)
+			for {
+				n, err := syscall.EpollWait(epfd, ev, keepalive)
+				if n > 0 {
+					for {
+						n, err = syscall.Read(fd, buf)
+						if err == syscall.EAGAIN {
+							break
+						}
+						if err != nil {
+							logrus.WithFields(logrus.Fields{
+								"Error": err,
+							}).Errorln("Read Tun Errror.")
+							break
+						}
+
+						_, err = conn.Write(cfgUtil.PacketEncode(cfgUtil.CCfg.TunnelName, buf[:n]))
+						if err != nil {
+							logrus.WithFields(logrus.Fields{
+								"Error": err,
+							}).Errorln("Write Udp Error.")
+						}
+					}
+				} else if n == 0 { //send probe packet
+					_, err = conn.Write(tuNameBuf)
+					if err != nil {
+						logrus.WithFields(logrus.Fields{
+							"Error": err,
+						}).Errorln("Write Udp Error.")
+					}
+				} else {
+					logrus.WithFields(logrus.Fields{
+						"Error": err,
+					}).Errorln("EpollWait Error.")
+				}
+			}
+		}()
 	} else if cfgUtil.CCfg.Protocol == "quic" {
 		tlsConfig := &tls.Config{InsecureSkipVerify: cfgUtil.CCfg.QUIC.AllowInSecure, NextProtos: []string{"quic-tunproject"}}
 		addrStr := ""
@@ -391,7 +501,6 @@ func ClientInit() error {
 				"Error": err,
 			}).Errorln("ReadTunToQUICClient Error.")
 		}()
-
 	} else {
 		logrus.WithFields(logrus.Fields{
 			"Protocol": cfgUtil.CCfg.Protocol,
@@ -434,15 +543,20 @@ func ServerInit() error {
 	go event.EventRun()
 
 	if cfgUtil.SCfg.TCP.Enable {
-		// err = serverTcpListen(serverCfg)
-		// if err != nil {
-		// 	return err
-		// }
 		err = event.TcpListenerInit(cfgUtil.SCfg.TCP.IP, cfgUtil.SCfg.TCP.Port, 10)
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
 				"Error": err,
 			}).Errorln("TcpInit Failed.")
+		}
+	}
+
+	if cfgUtil.SCfg.UDP.Enable {
+		err = event.UdpListenerInit(cfgUtil.SCfg.UDP.IP, cfgUtil.SCfg.UDP.Port)
+		if err != nil {
+			logrus.WithFields(logrus.Fields{
+				"Error": err,
+			}).Errorln("UdpInit Failed.")
 		}
 	}
 

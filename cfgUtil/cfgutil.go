@@ -44,6 +44,12 @@ type Icmp struct {
 	Keepalive  int    `json:"keepalive"` //how long it will take before client starting to send probe packets without sending any packet
 }
 
+type Udp struct {
+	Ip        string `json:"ip"`
+	Port      int    `json:"port"`
+	Keepalive int    `json:"keepalive"` //how long it will take before client starting to send probe packets without sending any packet
+}
+
 type QUIC struct {
 	Ip            string `json:"ip"`
 	QuicUrl       string `json:"quicUrl"`
@@ -61,6 +67,7 @@ type ClientCfg struct {
 	PidFile    string `json:"pidfile"`
 	TCP        Tcp    `json:"tcp"`
 	ICMP       Icmp   `json:"icmp"`
+	UDP        Udp    `json:"udp"`
 	QUIC       QUIC   `json:"quic"`
 	TunnelName string `json:"tunnelName"`
 	Passwd     string `json:"passwd"`
@@ -113,6 +120,7 @@ type ServerCfg struct {
 	PidFile  string      `json:"pidfile"`
 	TCP      TCPCfg      `json:"tcp"`
 	ICMP     ICMPCfg     `json:"icmp"`
+	UDP      UDPCfg      `json:"udp"`
 	QUIC     QUICCfg     `json:"quic"`
 	Tunnels  []TunnelCfg `json:"tunnels"`
 }
@@ -126,7 +134,14 @@ type TCPCfg struct {
 type ICMPCfg struct {
 	Enable    bool   `json:"enable"`
 	IP        string `json:"ip"`
-	BreakTime int    `json:"breakTime"` //how long it will take before server abandons the tunnel when it don't receive any packet from the client(recommended minimum is 20s)
+	BreakTime int    `json:"breakTime"` //how long it will take before server abandons the tunnel when it don't receive any packet from the client
+}
+
+type UDPCfg struct {
+	Enable    bool   `json:"enable"`
+	IP        string `json:"ip"`
+	Port      int    `json:"port"`
+	BreakTime int    `json:"breakTime"` //how long it will take before server abandons the tunnel when it don't receive any packet from the client
 }
 
 type QUICCfg struct {

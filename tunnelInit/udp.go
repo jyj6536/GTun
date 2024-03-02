@@ -2,7 +2,6 @@ package tunnelInit
 
 import (
 	"net"
-	"strconv"
 	"syscall"
 	"tunproject/cfgUtil"
 	"tunproject/event"
@@ -10,22 +9,16 @@ import (
 )
 
 func init() {
-	rCallback[event.IcmpIndex] = icmpReceive
+	rCallback[event.UdpIndex] = udpReceive
 }
 
-func icmpReceive(fe *event.FileEvent, fd int32) {
-	icmp := event.IcmpConstruct(fe.RBuf[:fe.RLen])
-	if icmp == nil || icmp.Type != event.Request {
-		return
-	}
-	p := cfgUtil.PacketDecode(icmp.Data)
+func udpReceive(fe *event.FileEvent, fd int32) {
+	p := cfgUtil.PacketDecode(fe.RBuf[:fe.RLen])
 	if p == nil || cfgUtil.TunExist(p.TuName) == nil {
-		rsp := event.IcmpCreate(event.Reply, 0, icmp.Identifier, icmp.SeqNum, icmp.Data)
-		syscall.Sendto(int(fd), rsp, 0, fe.Addr)
 		return
 	}
 	addr := net.IP(fe.Addr.(*syscall.SockaddrInet4).Addr[:]).String()
-	key := addr + "+" + strconv.FormatUint(uint64(icmp.Identifier), 10) + "+" + p.TuName
+	key := addr + "+" + p.TuName
 	nInfo, exist := cfgUtil.AtoT[key]
 	if !exist {
 		tCfg := cfgUtil.TunExist(p.TuName)
@@ -48,25 +41,24 @@ func icmpReceive(fe *event.FileEvent, fd int32) {
 		}
 		nInfo.Tfd = int32(tfd)
 		nInfo.TuName = p.TuName
-		nInfo.Te = event.AddTimeEvent(int64(cfgUtil.SCfg.ICMP.BreakTime), tfd, icmpTimeout)
+		nInfo.Te = event.AddTimeEvent(int64(cfgUtil.SCfg.UDP.BreakTime), tfd, udpTimeout)
 		cfgUtil.AtoT[key] = nInfo
-		cfgUtil.TtoN[int32(tfd)] = cfgUtil.TfdInfo{Nfd: fd, TuName: p.TuName, Addr: fe.Addr, IcmpSrc: icmp}
+		cfgUtil.TtoN[int32(tfd)] = cfgUtil.TfdInfo{Nfd: fd, TuName: p.TuName, Addr: fe.Addr}
 		cfgUtil.DataTransfer[p.TuName] = &helper.RingBuffer[[]byte]{}
 	}
-	nInfo.Te.When = event.GetCurrentTime() + int64(cfgUtil.SCfg.ICMP.BreakTime)*1000
+	nInfo.Te.When = event.GetCurrentTime() + int64(cfgUtil.SCfg.UDP.BreakTime)*1000
 	if len(p.Frame) == 0 {
-		rsp := event.IcmpCreate(event.Reply, 0, icmp.Identifier, icmp.SeqNum, icmp.Data)
-		syscall.Sendto(int(fd), rsp, 0, fe.Addr)
+		syscall.Sendto(int(fd), fe.RBuf[:fe.RLen], 0, fe.Addr)
 		return
 	}
 	syscall.Write(int(nInfo.Tfd), p.Frame)
 }
 
-func icmpTimeout(v interface{}) {
+func udpTimeout(v interface{}) {
 	tfd := v.(int)
 	tInfo := cfgUtil.TtoN[int32(tfd)]
 	addr := net.IP(tInfo.Addr.(*syscall.SockaddrInet4).Addr[:]).String()
-	key := addr + "+" + strconv.FormatUint(uint64(tInfo.IcmpSrc.Identifier), 10) + "+" + tInfo.TuName
+	key := addr + "+" + tInfo.TuName
 	delete(cfgUtil.TtoN, int32(tfd))
 	delete(cfgUtil.AtoT, key)
 	delete(cfgUtil.DataTransfer, tInfo.TuName)
