@@ -570,6 +570,9 @@ func ServerInit() error {
 	}
 
 	if cfgUtil.SCfg.QUIC.Enable {
+		if cfgUtil.SCfg.UnixFile == "" {
+			cfgUtil.SCfg.UnixFile = "./tun.sock"
+		}
 
 		err = event.UnixListenerInit(cfgUtil.SCfg.UnixFile, 10)
 		if err != nil {

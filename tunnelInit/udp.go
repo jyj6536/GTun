@@ -2,6 +2,7 @@ package tunnelInit
 
 import (
 	"net"
+	"strconv"
 	"syscall"
 	"tunproject/cfgUtil"
 	"tunproject/event"
@@ -17,7 +18,7 @@ func udpReceive(fe *event.FileEvent, fd int32) {
 	if p == nil || cfgUtil.TunExist(p.TuName) == nil {
 		return
 	}
-	addr := net.IP(fe.Addr.(*syscall.SockaddrInet4).Addr[:]).String()
+	addr := net.IP(fe.Addr.(*syscall.SockaddrInet4).Addr[:]).String() + ":" + strconv.Itoa(fe.Addr.(*syscall.SockaddrInet4).Port)
 	key := addr + "+" + p.TuName
 	nInfo, exist := cfgUtil.AtoT[key]
 	if !exist {
@@ -57,7 +58,7 @@ func udpReceive(fe *event.FileEvent, fd int32) {
 func udpTimeout(v interface{}) {
 	tfd := v.(int)
 	tInfo := cfgUtil.TtoN[int32(tfd)]
-	addr := net.IP(tInfo.Addr.(*syscall.SockaddrInet4).Addr[:]).String()
+	addr := net.IP(tInfo.Addr.(*syscall.SockaddrInet4).Addr[:]).String() + ":" + strconv.Itoa(tInfo.Addr.(*syscall.SockaddrInet4).Port)
 	key := addr + "+" + tInfo.TuName
 	delete(cfgUtil.TtoN, int32(tfd))
 	delete(cfgUtil.AtoT, key)
