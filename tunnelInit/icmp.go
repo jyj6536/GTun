@@ -7,6 +7,8 @@ import (
 	"tunproject/cfgUtil"
 	"tunproject/event"
 	"tunproject/helper"
+
+	"github.com/sirupsen/logrus"
 )
 
 func init() {
@@ -52,6 +54,9 @@ func icmpReceive(fe *event.FileEvent, fd int32) {
 		cfgUtil.AtoT[key] = nInfo
 		cfgUtil.TtoN[int32(tfd)] = cfgUtil.TfdInfo{Nfd: fd, TuName: p.TuName, Addr: fe.Addr, IcmpSrc: icmp}
 		cfgUtil.DataTransfer[p.TuName] = &helper.RingBuffer[[]byte]{}
+		logrus.WithFields(logrus.Fields{
+			"TuName": nInfo.TuName,
+		}).Infoln("Tunnel Created.")
 	}
 	nInfo.Te.When = event.GetCurrentTime() + int64(cfgUtil.SCfg.ICMP.BreakTime)*1000
 	if len(p.Frame) == 0 {
@@ -72,4 +77,7 @@ func icmpTimeout(v interface{}) {
 	delete(cfgUtil.DataTransfer, tInfo.TuName)
 	event.DelFileEvent(int32(tfd))
 	event.CloseTun(tfd)
+	logrus.WithFields(logrus.Fields{
+		"TuName": tInfo.TuName,
+	}).Infoln("Tunnel has been closed because of timeout.")
 }

@@ -5,6 +5,8 @@ import (
 	"tunproject/cfgUtil"
 	"tunproject/event"
 	"tunproject/helper"
+
+	"github.com/sirupsen/logrus"
 )
 
 func init() {
@@ -54,6 +56,9 @@ func tcpRceive(fe *event.FileEvent, fd int32) {
 			fe.Err = true
 			return
 		}
+		logrus.WithFields(logrus.Fields{
+			"TuName": nInfo.TuName,
+		}).Infoln("Tunnel Created.")
 	}
 	if len(p.Frame) == 0 {
 		return

@@ -27,7 +27,7 @@ type NfdInfo struct {
 }
 
 var AtoT map[string]NfdInfo = map[string]NfdInfo{} //used for icmp and udp
-var NtoT map[int32]NfdInfo = map[int32]NfdInfo{}   //used for tcp
+var NtoT map[int32]NfdInfo = map[int32]NfdInfo{}   //used for tcp and unix
 var TtoN map[int32]TfdInfo = map[int32]TfdInfo{}
 var DataTransfer map[string]*helper.RingBuffer[[]byte] = map[string]*helper.RingBuffer[[]byte]{}
 
@@ -152,6 +152,7 @@ type QUICCfg struct {
 	KeyPath   string `json:"keyPath"`   //private key
 	ShakeTime int    `json:"shakeTime"` //ssl shakehand timeout(0 means default and default is 5s)
 	IdleTime  int    `json:"idleTime"`  //maximum duration that may pass without any incoming network activity(0 means default and default is  30s, the actual value for the idle timeout is the minimum of this value and the peer's)
+	BreakTime int    `json:"breakTime"` //how long it will take before server abandons the tunnel when it don't receive any packet from the client
 	Timeout   int    `json:"timeout"`   //timeout used in send or receive
 }
 

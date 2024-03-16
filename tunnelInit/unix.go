@@ -5,6 +5,8 @@ import (
 	"tunproject/cfgUtil"
 	"tunproject/event"
 	"tunproject/helper"
+
+	"github.com/sirupsen/logrus"
 )
 
 func init() {
@@ -46,6 +48,7 @@ func unixReceive(fe *event.FileEvent, fd int32) {
 		}
 		nInfo.Tfd = int32(tfd)
 		nInfo.TuName = p.TuName
+		nInfo.Te = event.AddTimeEvent(int64(cfgUtil.SCfg.QUIC.BreakTime), tfd, unixTimeout)
 		cfgUtil.NtoT[fd] = nInfo
 		cfgUtil.TtoN[int32(tfd)] = cfgUtil.TfdInfo{Nfd: fd, TuName: p.TuName}
 		cfgUtil.DataTransfer[p.TuName] = helper.RingBufferCreate[[]byte](1000)
@@ -54,7 +57,11 @@ func unixReceive(fe *event.FileEvent, fd int32) {
 			fe.Err = true
 			return
 		}
+		logrus.WithFields(logrus.Fields{
+			"TuName": nInfo.TuName,
+		}).Infoln("Tunnel Created.")
 	}
+	nInfo.Te.When = event.GetCurrentTime() + int64(cfgUtil.SCfg.QUIC.BreakTime)*1000
 	if len(p.Frame) == 0 {
 		return
 	}
@@ -90,4 +97,17 @@ func unixError(fe *event.FileEvent, fd int32) {
 	}
 	event.DelFileEvent(fd)
 	syscall.Close(int(fd))
+}
+
+func unixTimeout(v interface{}) {
+	tfd := v.(int)
+	tInfo := cfgUtil.TtoN[int32(tfd)]
+	delete(cfgUtil.TtoN, int32(tfd))
+	delete(cfgUtil.NtoT, tInfo.Nfd)
+	delete(cfgUtil.DataTransfer, tInfo.TuName)
+	event.DelFileEvent(int32(tfd))
+	event.CloseTun(tfd)
+	logrus.WithFields(logrus.Fields{
+		"TuName": tInfo.TuName,
+	}).Infoln("Tunnel has been closed because of timeout.")
 }

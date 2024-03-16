@@ -7,6 +7,8 @@ import (
 	"tunproject/cfgUtil"
 	"tunproject/event"
 	"tunproject/helper"
+
+	"github.com/sirupsen/logrus"
 )
 
 func init() {
@@ -46,6 +48,9 @@ func udpReceive(fe *event.FileEvent, fd int32) {
 		cfgUtil.AtoT[key] = nInfo
 		cfgUtil.TtoN[int32(tfd)] = cfgUtil.TfdInfo{Nfd: fd, TuName: p.TuName, Addr: fe.Addr}
 		cfgUtil.DataTransfer[p.TuName] = &helper.RingBuffer[[]byte]{}
+		logrus.WithFields(logrus.Fields{
+			"TuName": nInfo.TuName,
+		}).Infoln("Tunnel Created.")
 	}
 	nInfo.Te.When = event.GetCurrentTime() + int64(cfgUtil.SCfg.UDP.BreakTime)*1000
 	if len(p.Frame) == 0 {
@@ -65,4 +70,7 @@ func udpTimeout(v interface{}) {
 	delete(cfgUtil.DataTransfer, tInfo.TuName)
 	event.DelFileEvent(int32(tfd))
 	event.CloseTun(tfd)
+	logrus.WithFields(logrus.Fields{
+		"TuName": tInfo.TuName,
+	}).Infoln("Tunnel has been closed because of timeout.")
 }
