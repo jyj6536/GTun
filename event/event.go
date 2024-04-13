@@ -119,6 +119,9 @@ func EventRun() {
 			timeout = -1
 		} else {
 			timeout = timeout - currTimeCached
+			if timeout < 0 {
+				timeout = 0
+			}
 		}
 		n, _ := syscall.EpollWait(el.Epfd, el.Events, int(timeout))
 		if n == -1 {
