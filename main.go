@@ -159,7 +159,4 @@ func main() {
 	if lockFile != nil {
 		os.Remove(pidFile)
 	}
-	if _, err := os.Stat(cfgUtil.SCfg.UnixFile); err == nil {
-		os.Remove(cfgUtil.SCfg.UnixFile)
-	}
 }

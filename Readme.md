@@ -16,7 +16,6 @@
 {
     "type":"server",
     "pidfile":"",
-    "unixfile":"",
     "tcp":{
         "enable":true,
         "port":4567,
@@ -27,15 +26,11 @@
         "ip":"192.168.56.2",
         "breakTime":60
     },
-    "quic":{
+    "udp":{
         "enable":true,
-        "port":4567,
-        "ip":"0.0.0.0",
-        "certPath":"./public.cer",
-        "keyPath":"./private.key",
-        "shakeTime":5,
-        "idleTime":30,
-        "timeout":5
+        "ip":"192.168.56.2",
+        "port":4568,
+        "breakTime":60
     },
     "tunnels":[
         {
@@ -66,14 +61,6 @@
   + enable：是否启用
   + ip：监听地址
   + breakTime：当通过 icmp 协议建立一条隧道之后，如果在 breakTime 秒内未收到客户端的任何报文，则删除该隧道
-+ quic：quic 协议相关配置
-  + enable：是否启用
-  + port：监听端口
-  + ip：监听地址
-  + certPath、keyPath：证书公私钥配置
-  + shakeTime：quic 协议 ssl 握手超时时间
-  + idleTime：放弃连接之前的空闲时间
-  + timeout：发送数据的超时时间
 + tunnels：隧道配置信息
   + tunnelName：隧道名称
   + passwd：密码，用于认证（认证未实现）
@@ -99,16 +86,6 @@
         "identifier":4567,
         "keepalive":5
     },
-    "quic":{
-        "ip":"192.168.56.2",
-        "quicUrl":"",
-        "port":4567,
-        "allowInSecure":true,
-        "shakeTime":5,
-        "idleTime":30,
-        "timeout":5,
-        "keepalive":5
-    },
     "tunnelName":"tunnel1",
     "passwd":"aaaaa",
     "deviceType":"tap",
@@ -127,15 +104,6 @@
 + icmp：icmp 协议相关配置
   + ip：远端 server 地址
   + identifier：icmp 报文中的 id 字段
-  + keepalive：主动发送探测报文的频率（秒）
-+ quic：quic 协议相关配置
-  + ip：远端 server 地址
-  + quicUrl：远端 server url
-  + port：远端 server 端口
-  + allowInSecure：是否校验  server 端证书合法性（true 标识不校验）
-  + shakeTime：quic 协议 ssl 握手超时时间
-  + idleTime：放弃连接之前的空闲时间
-  + timeout：发送数据的超时时间
   + keepalive：主动发送探测报文的频率（秒）
 + tunnelName：隧道名称
 + passwd：密码，用于认证（认证未实现）

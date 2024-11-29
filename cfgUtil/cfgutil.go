@@ -50,17 +50,6 @@ type Udp struct {
 	Keepalive int    `json:"keepalive"` //how long it will take before client starting to send probe packets without sending any packet
 }
 
-type QUIC struct {
-	Ip            string `json:"ip"`
-	QuicUrl       string `json:"quicUrl"`
-	Port          int    `json:"port"`
-	AllowInSecure bool   `json:"allowInSecure"`
-	ShakeTime     int    `json:"shakeTime"` //ssl shakehand timeout(0 means default and default is 5s)
-	IdleTime      int    `json:"idleTime"`  //maximum duration that may pass without any incoming network activity(0 means default and default is 30s, the actual value for the idle timeout is the minimum of this value and the peer's)
-	Timeout       int    `json:"timeout"`   //timeout used in send or receive(recommended minimum is 5s)
-	Keepalive     int    `json:"keepalive"` //how long it will take before client starting to send probe packets without sending any packet
-}
-
 type ClientCfg struct {
 	Type       string `json:"type"`
 	Protocol   string `json:"protocol"`
@@ -68,7 +57,6 @@ type ClientCfg struct {
 	TCP        Tcp    `json:"tcp"`
 	ICMP       Icmp   `json:"icmp"`
 	UDP        Udp    `json:"udp"`
-	QUIC       QUIC   `json:"quic"`
 	TunnelName string `json:"tunnelName"`
 	Passwd     string `json:"passwd"`
 	DeviceType string `json:"deviceType"`
@@ -115,14 +103,12 @@ type TunnelCfg struct {
 }
 
 type ServerCfg struct {
-	Type     string      `json:"type"` //config file type : must be server
-	UnixFile string      `json:"unixfile"`
-	PidFile  string      `json:"pidfile"`
-	TCP      TCPCfg      `json:"tcp"`
-	ICMP     ICMPCfg     `json:"icmp"`
-	UDP      UDPCfg      `json:"udp"`
-	QUIC     QUICCfg     `json:"quic"`
-	Tunnels  []TunnelCfg `json:"tunnels"`
+	Type    string      `json:"type"` //config file type : must be server
+	PidFile string      `json:"pidfile"`
+	TCP     TCPCfg      `json:"tcp"`
+	ICMP    ICMPCfg     `json:"icmp"`
+	UDP     UDPCfg      `json:"udp"`
+	Tunnels []TunnelCfg `json:"tunnels"`
 }
 
 type TCPCfg struct {
@@ -142,18 +128,6 @@ type UDPCfg struct {
 	IP        string `json:"ip"`
 	Port      int    `json:"port"`
 	BreakTime int    `json:"breakTime"` //how long it will take before server abandons the tunnel when it don't receive any packet from the client
-}
-
-type QUICCfg struct {
-	Enable    bool   `json:"enable"`
-	Port      int    `json:"port"`
-	IP        string `json:"ip"`
-	CertPath  string `json:"certPath"`  //public key
-	KeyPath   string `json:"keyPath"`   //private key
-	ShakeTime int    `json:"shakeTime"` //ssl shakehand timeout(0 means default and default is 5s)
-	IdleTime  int    `json:"idleTime"`  //maximum duration that may pass without any incoming network activity(0 means default and default is  30s, the actual value for the idle timeout is the minimum of this value and the peer's)
-	BreakTime int    `json:"breakTime"` //how long it will take before server abandons the tunnel when it don't receive any packet from the client
-	Timeout   int    `json:"timeout"`   //timeout used in send or receive
 }
 
 func LoadServerCfg(path string) (*ServerCfg, error) {
